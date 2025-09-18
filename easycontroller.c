@@ -8,7 +8,8 @@
 #include "hardware/sync.h"
 #include "hardware/uart.h"
 
-//Test
+//*********ISR = Interrupt Service Routine       Function that runs when an interupt fires
+//*********IRQ = Interrupt Request               The hardare signal interupt
 
 // Begin user config section ---------------------------
 
@@ -85,6 +86,7 @@ void on_adc_fifo() {
 
     adc_run(false);             // Stop the ADC from free running
     gpio_put(FLAG_PIN, 1);      // For debugging, toggle the flag pin
+    //************** prob this pin to see when the interupt occures
 
     fifo_level = adc_fifo_get_level();
     adc_isense = adc_fifo_get();    // Read the ADC values into the registers
@@ -100,8 +102,9 @@ void on_adc_fifo() {
     }
 
     hall = get_halls();                 // Read the hall sensors
+    //********* gets value 1-6, 0&7 are invalid this corelates to motor state
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
-
+    //********** after the halls are initilized this will pull from the hall table
     int throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
     throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-255
 
@@ -122,6 +125,7 @@ void on_adc_fifo() {
             ticks_since_init++;
 
         duty_cycle += (current_target_ma - current_ma) / CURRENT_CONTROL_LOOP_GAIN;  // Perform a simple integral controller to adjust the duty cycle
+        //**********CURRENT_CONTROL_LOOP_GAIN = 200, this adjusts how drastic of changes the controller will make
         duty_cycle = MAX(0, MIN(DUTY_CYCLE_MAX, duty_cycle));   // Clamp the duty cycle
 
         bool do_synchronous = ticks_since_init > 16000;    // Only enable synchronous switching some time after beginning control loop. This allows control loop to stabilize

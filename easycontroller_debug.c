@@ -353,14 +353,25 @@ void commutate_open_loop()
     }
 }
 
+void wait_for_serial_command(const char *message) {
+    printf("%s\n", message);
+    printf("Type any key + Enter to continue...\n");
+
+    int c = getchar();  // Blocks until at least one character arrives
+    (void)c;            // discard it, we only care about pausing
+}
+
 int main() {
     printf("Hello from Pico!\n");
     init_hardware();
+
+    wait_for_serial_command("System initialized. Waiting to start...");
 
     //commutate_open_loop();   // May be helpful for debugging electrical problems
 
     if(IDENTIFY_HALLS_ON_BOOT)
         identify_halls();
+        wait_for_serial_command("Hall identification done. Review table above.");
 
     sleep_ms(1000);
 
@@ -374,3 +385,58 @@ int main() {
 
     return 0;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+Future imporvement for stall protection (from chat)
+
+
+// globals
+volatile uint32_t last_hall_tick = 0;   // incremented in on_adc_fifo() or a hall IRQ
+volatile uint64_t ticks_since_init = 0; // you already have this
+
+// Call this inside on_adc_fifo(), after reading halls:
+static uint32_t hall_prev = 0;
+uint32_t hall_now = hall; // your current hall code
+if (hall_now != hall_prev && hall_now != 0 && hall_now != 7) {
+    last_hall_tick = ticks_since_init;   // saw movement
+    hall_prev = hall_now;
+}
+
+// Detect stopped/very slow (tune the threshold for your PWM rate)
+bool no_motion = (ticks_since_init - last_hall_tick) > 8000; // ~0.5 s at 16 kHz
+
+// Decide synchronous enable (time gate + motion)
+bool do_synchronous = (ticks_since_init > 16000) && !no_motion;
+
+// Optional: if no motion, “re-arm” the startup delay
+if (no_motion) {
+    // If throttle is low or duty collapsed, re-arm more aggressively:
+    // ticks_since_init = 0; // uncomment if you want a full 1 s delay again
+}
+
+*/
