@@ -15,12 +15,9 @@
 const bool IDENTIFY_HALLS_ON_BOOT = true;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
 
-uint8_t hallToMotor[8] = {255, 255, 255, 255, 255, 255, 255, 255};  // Default hall table. Overwrite this with the output of the hall auto-identification 
+uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255,};  // Default hall table. Overwrite this with the output of the hall auto-identification 
 // uint8_t hallToMotor[8] = {255, 2, 0, 1, 4, 3, 5, 255};  // Example hall table
-// 255, 1, 2, 4, 5, 0, 6, 255, 
 
-
-//255, 1, 2, 4, 4, 0, 6, 255,
 
 
 const int THROTTLE_LOW = 600;               // ADC value corresponding to minimum throttle, 0-4095
@@ -374,7 +371,7 @@ int main() {
 
     wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
 
-    commutate_open_loop();   // May be helpful for debugging electrical problems
+    //commutate_open_loop();   // May be helpful for debugging electrical problems
 
     if(IDENTIFY_HALLS_ON_BOOT)
         identify_halls();

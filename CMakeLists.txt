@@ -47,3 +47,18 @@ pico_enable_stdio_usb(easycontroller_experimental 1)
 pico_enable_stdio_uart(easycontroller_experimental 0)
 
 pico_add_extra_outputs(easycontroller_experimental)
+
+
+
+# # Chat_Controller
+
+# add_executable(Chat_Controller
+#     Chat_Controller.c
+# )
+
+# target_link_libraries(Chat_Controller pico_stdlib hardware_pwm)
+
+# pico_enable_stdio_usb(Chat_Controller 1)   # Enable USB serial for user input
+# pico_enable_stdio_uart(Chat_Controller 0)
+
+# pico_add_extra_outputs(Chat_Controller)
