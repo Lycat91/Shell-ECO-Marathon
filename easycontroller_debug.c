@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h> 
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
@@ -8,13 +9,15 @@
 #include "hardware/sync.h"
 #include "hardware/uart.h"
 
+
 //Test
 
 // Begin user config section ---------------------------
 
-const bool IDENTIFY_HALLS_ON_BOOT = true;   // If true, controller will initialize the hall table by slowly spinning the motor
+const bool IDENTIFY_HALLS_ON_BOOT = false;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
-const bool COMPUTER_CONTROL = false;      // If true will enable throttle control via serial communication 
+const bool COMPUTER_CONTROL = true;      // If true will enable throttle control via serial communication 
+
 
 
 uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
@@ -50,8 +53,8 @@ const uint THROTTLE_PIN = 28;
 const uint A_PWM_SLICE = 0;
 const uint B_PWM_SLICE = 1;
 const uint C_PWM_SLICE = 2;
-
-const uint F_PWM = 16000;   // Desired PWM frequency
+ 
+uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
 const uint FLAG_PIN = 2;
 const uint HALL_OVERSAMPLE = 8;
 
@@ -76,6 +79,8 @@ uint motorState = 0;
 int fifo_level = 0;
 uint64_t ticks_since_init = 0;
 volatile int throttle = 0;   // 0–255, updated from ADC or serial
+
+
 
 uint get_halls();
 void writePWM(uint motorState, uint duty, bool synchronous);
@@ -106,33 +111,9 @@ void on_adc_fifo() {
 
     hall = get_halls();                 // Read the hall sensors
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
-    
-//--------------------------------------------------------------------------------------------------------------------------------------
-    if (COMPUTER_CONTROL == true){
-        int c = getchar_timeout_us(0); // non-blocking read, returns PICO_ERROR_TIMEOUT if nothing available
-        if (c != PICO_ERROR_TIMEOUT) {
-            static char buf[8];
-            static int idx = 0;
-
-            if (c == '\n' || c == '\r') {
-                buf[idx] = '\0';
-                int val = atoi(buf);           // convert to integer
-                if (val >= 0 && val <= 255) {  // clamp range
-                    throttle = val;
-                }
-                idx = 0;   // reset buffer
-            } else if (idx < (int)(sizeof(buf) - 1)) {
-                buf[idx++] = (char)c;  // store digit
-            }
-        }
-    }
-
-
-    else{
+        
     throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
-    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-255
-    }
-//--------------------------------------------------------------------------------------------------------------------------------------
+    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-25
 
     current_ma = (adc_isense - adc_bias) * CURRENT_SCALING;     // Since the current sensor is bidirectional, subtract the zero-current value and scale
     voltage_mv = adc_vsense * VOLTAGE_SCALING;  // Calculate the bus voltage
@@ -377,11 +358,50 @@ void commutate_open_loop()
     while(true)
     {
         writePWM(state % 6, 25, false);
-        printf("State = %d\n", state % 6);
+        //printf("State = %d\n", state % 6); //*********** print the motor state being written to
         sleep_ms(50);
         state++;
     }
 }
+
+void check_serial_input() {
+    static char buf[8];
+    static int idx = 0;
+
+    // keep reading until input buffer is empty
+    int c;
+    while ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {
+        if (c == '\n' || c == '\r') {
+            if (idx > 0) {
+                buf[idx] = '\0';
+                int val = atoi(buf);
+                if (val >= 0 && val <= 255) {
+                    throttle = val;
+                    printf("Throttle updated: %d\n", throttle);
+                }
+                idx = 0; // reset buffer
+            }
+        } else if (idx < (int)(sizeof(buf) - 1)) {
+            buf[idx++] = (char)c;
+        }
+    }
+}
+
+void commutate_open_loop_Computer_Control()
+{
+    // A useful function to debug electrical problems with the board.
+    // This slowly advances the motor commutation without reading hall sensors. The motor should slowly spin
+    int state = 0;
+    while(true)
+    {
+        check_serial_input();
+        writePWM(state % 6, throttle, false);
+        //printf("State = %d\n", state % 6); //*********** print the motor state being written to
+        sleep_ms(100);
+        state++;
+    }
+}
+
 
 //********** wait function !!!do not use after interrupts are enabled!!!
 void wait_for_serial_command(const char *message) {
@@ -392,18 +412,28 @@ void wait_for_serial_command(const char *message) {
     (void)c;            // discard it, we only care about pausing
 }
 
+
 int main() {
     printf("Hello from Pico!\n");
+    
+    
+    if (COMPUTER_CONTROL) {
+        F_PWM = 20;   // slow for visible LEDs  !!!!!!!!!!!!!!!!!!!!!!!IF TESTING WITH MOTOR CHANGE THIS BACK TO 16000!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    }
+
+
     init_hardware();
 
     wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
+    printf("Hello from Pico!\n");
 
     //commutate_open_loop();   // May be helpful for debugging electrical problems
+    commutate_open_loop_Computer_Control();
 
-    if(IDENTIFY_HALLS_ON_BOOT)
+    if(IDENTIFY_HALLS_ON_BOOT){
         identify_halls();
-    
-    wait_for_serial_command("Hall identification done. Review table above."); //***Wait function press any key to pass
+        wait_for_serial_command("Hall identification done. Review table above."); //***Wait function press any key to pass
+    }
 
     sleep_ms(1000);
 
