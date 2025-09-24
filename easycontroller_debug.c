@@ -14,18 +14,11 @@
 
 const bool IDENTIFY_HALLS_ON_BOOT = true;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
-//------------------------------------------------------------------------------------------
-
-
-
 const bool COMPUTER_CONTROL = false;      // If true will enable throttle control via serial communication 
 
 
-
-
-//---------------------------------------------------------------------------------------------
-
-uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  // Default hall table. Overwrite this with the output of the hall auto-identification 
+uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
+// uint8_t hallToMotor[8] = {255, 255, 255, 255, 255, 255, 255, 255};  // Default hall table. Overwrite this with the output of the hall auto-identification 
 // uint8_t hallToMotor[8] = {255, 2, 0, 1, 4, 3, 5, 255};  // Example hall table
 
 
