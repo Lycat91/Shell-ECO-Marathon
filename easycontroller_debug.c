@@ -54,7 +54,7 @@ const uint A_PWM_SLICE = 0;
 const uint B_PWM_SLICE = 1;
 const uint C_PWM_SLICE = 2;
  
-uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
+const uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
 const uint FLAG_PIN = 2;
 const uint HALL_OVERSAMPLE = 8;
 
@@ -224,6 +224,30 @@ void writePWM(uint motorState, uint duty, bool synchronous)
         writePhases(0, duty, 0, 0, complement, 255);
     else                                        // All transistors off
         writePhases(0, 0, 0, 0, 0, 0);
+
+
+
+
+// //***************** Used to visualize motor states through LEDS (Low pins being 255 pwm makes it hard to see what going on)
+// //***************** Dont run the motor with this configuration. Purely for demonstration purposes
+//    if(motorState == 0)                         // LOW A, HIGH B
+//         writePhases(0, duty, 0, duty, complement, 0);
+//     else if(motorState == 1)                    // LOW A, HIGH C
+//         writePhases(0, 0, duty, duty, 0, complement);
+//     else if(motorState == 2)                    // LOW B, HIGH C
+//         writePhases(0, 0, duty, 0, duty, complement);
+//     else if(motorState == 3)                    // LOW B, HIGH A
+//         writePhases(duty, 0, 0, complement, duty, 0);
+//     else if(motorState == 4)                    // LOW C, HIGH A
+//         writePhases(duty, 0, 0, complement, 0, duty);
+//     else if(motorState == 5)                    // LOW C, HIGH B
+//         writePhases(0, duty, 0, 0, complement, duty);
+//     else                                        // All transistors off
+//         writePhases(0, 0, 0, 0, 0, 0);
+
+
+
+
 }
 
 void init_hardware() {
@@ -417,9 +441,9 @@ int main() {
     printf("Hello from Pico!\n");
     
     
-    if (COMPUTER_CONTROL) {
-        F_PWM = 20;   // slow for visible LEDs  !!!!!!!!!!!!!!!!!!!!!!!IF TESTING WITH MOTOR CHANGE THIS BACK TO 16000!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    }
+    // if (COMPUTER_CONTROL) {
+    //     F_PWM = 1000;   // slow for visible LEDs  !!!!!!!!!!!!!!!!!!!!!!!IF TESTING WITH MOTOR CHANGE THIS BACK TO 16000!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // }
 
 
     init_hardware();
