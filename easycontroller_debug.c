@@ -452,7 +452,7 @@ int main() {
     printf("Hello from Pico!\n");
 
     //commutate_open_loop();   // May be helpful for debugging electrical problems
-    commutate_open_loop_Computer_Control();
+    //commutate_open_loop_Computer_Control();
 
     if(IDENTIFY_HALLS_ON_BOOT){
         identify_halls();

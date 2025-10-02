@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h> 
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "hardware/clocks.h"
@@ -8,16 +9,22 @@
 #include "hardware/sync.h"
 #include "hardware/uart.h"
 
-//*********ISR = Interrupt Service Routine       Function that runs when an interupt fires
-//*********IRQ = Interrupt Request               The hardare signal interupt
+
+//Test
 
 // Begin user config section ---------------------------
 
 const bool IDENTIFY_HALLS_ON_BOOT = false;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
+const bool COMPUTER_CONTROL = true;      // If true will enable throttle control via serial communication 
 
-uint8_t hallToMotor[8] = {255, 255, 255, 255, 255, 255, 255, 255};  // Default hall table. Overwrite this with the output of the hall auto-identification 
+
+
+uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
+// uint8_t hallToMotor[8] = {255, 255, 255, 255, 255, 255, 255, 255};  // Default hall table. Overwrite this with the output of the hall auto-identification 
 // uint8_t hallToMotor[8] = {255, 2, 0, 1, 4, 3, 5, 255};  // Example hall table
+
+
 
 const int THROTTLE_LOW = 600;               // ADC value corresponding to minimum throttle, 0-4095
 const int THROTTLE_HIGH = 2650;             // ADC value corresponding to maximum throttle, 0-4095
@@ -46,8 +53,8 @@ const uint THROTTLE_PIN = 28;
 const uint A_PWM_SLICE = 0;
 const uint B_PWM_SLICE = 1;
 const uint C_PWM_SLICE = 2;
-
-const uint F_PWM = 16000;   // Desired PWM frequency
+ 
+const uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
 const uint FLAG_PIN = 2;
 const uint HALL_OVERSAMPLE = 8;
 
@@ -71,12 +78,16 @@ int hall = 0;
 uint motorState = 0;
 int fifo_level = 0;
 uint64_t ticks_since_init = 0;
+volatile int throttle = 0;   // 0–255, updated from ADC or serial
+int motorstate_counter = 0;
+int prev_motorstate = 0;
+
+
 
 uint get_halls();
 void writePWM(uint motorState, uint duty, bool synchronous);
 uint8_t read_throttle();
 
-//-----------------------------------------------------------------------------------------------------------------------------------------------------------
 void on_adc_fifo() {
     // This interrupt is where the magic happens. This is fired once the ADC conversions have finished (roughly 6us for 3 conversions)
     // This reads the hall sensors, determines the motor state to switch to, and reads the current sensors and throttle to
@@ -86,7 +97,6 @@ void on_adc_fifo() {
 
     adc_run(false);             // Stop the ADC from free running
     gpio_put(FLAG_PIN, 1);      // For debugging, toggle the flag pin
-    //************** prob this pin to see when the interupt occures
 
     fifo_level = adc_fifo_get_level();
     adc_isense = adc_fifo_get();    // Read the ADC values into the registers
@@ -100,13 +110,17 @@ void on_adc_fifo() {
         // will return more or less than the 3 samples it should. If we don't get the expected number, abort
         return;
     }
-
+    prev_motorstate = motorState;       // keeps track of previous motor state for rpm counting
     hall = get_halls();                 // Read the hall sensors
-    //********* gets value 1-6, 0&7 are invalid this corelates to motor state
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
-    //********** after the halls are initilized this will pull from the hall table
-    int throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
-    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-255
+    
+    //RPM counting variable
+    if (motorState == 1 && prev_motorstate != 1){
+        motorstate_counter += 1;
+    }
+        
+    throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
+    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-25
 
     current_ma = (adc_isense - adc_bias) * CURRENT_SCALING;     // Since the current sensor is bidirectional, subtract the zero-current value and scale
     voltage_mv = adc_vsense * VOLTAGE_SCALING;  // Calculate the bus voltage
@@ -125,7 +139,6 @@ void on_adc_fifo() {
             ticks_since_init++;
 
         duty_cycle += (current_target_ma - current_ma) / CURRENT_CONTROL_LOOP_GAIN;  // Perform a simple integral controller to adjust the duty cycle
-        //**********CURRENT_CONTROL_LOOP_GAIN = 200, this adjusts how drastic of changes the controller will make
         duty_cycle = MAX(0, MIN(DUTY_CYCLE_MAX, duty_cycle));   // Clamp the duty cycle
 
         bool do_synchronous = ticks_since_init > 16000;    // Only enable synchronous switching some time after beginning control loop. This allows control loop to stabilize
@@ -200,8 +213,8 @@ void writePWM(uint motorState, uint duty, bool synchronous)
     //******** EX duty=200, high side duty=200 low side (compliment) duty=(248-200=48). High side will turn on for 200 cycles, then dead band for 7 cycles, then low side turns on for 48 cycles.
     //******** The pwm is configured to center alighned (each cycle counts 0...244...0) and the low side pwm is inverted (pin=high when counter>=duty) The high side acts normally (pin=high when counter<duty)
     //******** This creates the alternating pwm and with the compliment calculation, the saftey deadband
-    //******** EX counter: 0 ................ 200   201..206   207 .......... 254
-    //********              ↑————— High ON ———↑    (both OFF)    ↑—— Low ON ——↑ 
+    //******** EX counter: 0 ................ 200   201..206   207 .......... 254 ........... 207......200..............0
+    //********              ↑————— High ON ———↑    (both OFF)    ↑——           Low ON        ——↑   off           high
 
 
     if(motorState == 0)                         // LOW A, HIGH B
@@ -218,6 +231,30 @@ void writePWM(uint motorState, uint duty, bool synchronous)
         writePhases(0, duty, 0, 0, complement, 255);
     else                                        // All transistors off
         writePhases(0, 0, 0, 0, 0, 0);
+
+
+
+
+// //***************** Used to visualize motor states through LEDS (Low pins being 255 pwm makes it hard to see what going on)
+// //***************** Dont run the motor with this configuration. Purely for demonstration purposes
+//    if(motorState == 0)                         // LOW A, HIGH B
+//         writePhases(0, duty, 0, duty, complement, 0);
+//     else if(motorState == 1)                    // LOW A, HIGH C
+//         writePhases(0, 0, duty, duty, 0, complement);
+//     else if(motorState == 2)                    // LOW B, HIGH C
+//         writePhases(0, 0, duty, 0, duty, complement);
+//     else if(motorState == 3)                    // LOW B, HIGH A
+//         writePhases(duty, 0, 0, complement, duty, 0);
+//     else if(motorState == 4)                    // LOW C, HIGH A
+//         writePhases(duty, 0, 0, complement, 0, duty);
+//     else if(motorState == 5)                    // LOW C, HIGH B
+//         writePhases(0, duty, 0, 0, complement, duty);
+//     else                                        // All transistors off
+//         writePhases(0, 0, 0, 0, 0, 0);
+
+
+
+
 }
 
 void init_hardware() {
@@ -325,6 +362,7 @@ void identify_halls()
         {
             sleep_us(500);
             writePWM(i, HALL_IDENTIFY_DUTY_CYCLE, false);
+            printf("%u\n", i);
             sleep_us(500);
             writePWM((i + 1) % 6, HALL_IDENTIFY_DUTY_CYCLE, false);     // PWM to the next half-state
         }
@@ -348,32 +386,160 @@ void commutate_open_loop()
     // A useful function to debug electrical problems with the board.
     // This slowly advances the motor commutation without reading hall sensors. The motor should slowly spin
     int state = 0;
+    int mode = 0;
+
     while(true)
     {
         writePWM(state % 6, 25, false);
-        printf("State = %d\n", state % 6);
+        //printf("State = %d\n", state % 6); //*********** print the motor state being written to
         sleep_ms(50);
         state++;
+        mode = getchar_timeot_us(0);
+                    if (atoi(mode) == 9){
+                        break;
+                }
     }
 }
 
+void check_serial_input() {
+    static char buf[8];
+    static int idx = 0;
+
+    // keep reading until input buffer is empty
+    int c;
+    while ((c = getchar_timeout_us(0)) != PICO_ERROR_TIMEOUT) {
+        if (c == '\n' || c == '\r') {
+            if (idx > 0) {
+                buf[idx] = '\0';
+                int val = atoi(buf);
+                if (val >= 0 && val <= 255) {
+                    throttle = val;
+                    printf("Throttle updated: %d\n", throttle);
+                }
+                idx = 0; // reset buffer
+            }
+        } else if (idx < (int)(sizeof(buf) - 1)) {
+            buf[idx++] = (char)c;
+        }
+    }
+}
+
+void commutate_open_loop_Computer_Control()
+{
+    // A useful function to debug electrical problems with the board.
+    // This slowly advances the motor commutation without reading hall sensors. The motor should slowly spin
+    int state = 0;
+    int mode = 0;
+    while(true)
+    {
+        check_serial_input();
+        writePWM(state % 6, throttle, false);
+        //printf("State = %d\n", state % 6); //*********** print the motor state being written to
+        sleep_ms(100);
+        state++;
+        mode = getchar_timeot_us(0);
+        if (atoi(mode) == 9){
+            break;
+        }
+    }
+}
+
+
+//********** wait function !!!do not use after interrupts are enabled!!!
+void wait_for_serial_command(const char *message) {
+    printf("%s\n", message);
+    printf("Type any key + Enter to continue...\n");
+
+    int c = getchar();  // Blocks until at least one character arrives
+    (void)c;            // discard it, we only care about pausing
+}
+
+
 int main() {
     printf("Hello from Pico!\n");
+    
+    
+    // if (COMPUTER_CONTROL) {
+    //     F_PWM = 1000;   // slow for visible LEDs  !!!!!!!!!!!!!!!!!!!!!!!IF TESTING WITH MOTOR CHANGE THIS BACK TO 16000!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    // }
+
+
     init_hardware();
 
-    //commutate_open_loop();   // May be helpful for debugging electrical problems
+    wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
+    printf("Hello from Pico!\n");
 
-    if(IDENTIFY_HALLS_ON_BOOT)
+    //commutate_open_loop();   // May be helpful for debugging electrical problems
+    //commutate_open_loop_Computer_Control();
+
+    if(IDENTIFY_HALLS_ON_BOOT){
         identify_halls();
+        wait_for_serial_command("Hall identification done. Review table above."); //***Wait function press any key to pass
+    }
 
     sleep_ms(1000);
 
-    pwm_set_irq_enabled(A_PWM_SLICE, true); // Enables interrupts, starting motor commutation
+    //pwm_set_irq_enabled(A_PWM_SLICE, true); // Enables interrupts, starting motor commutation
+
+    int mode;
 
     while (true) {
-        printf("%6d, %6d, %6d, %6d, %2d, %2d\n", current_ma, current_target_ma, duty_cycle, voltage_mv, hall, motorState);
-        gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
-        sleep_ms(100);
+        
+        printf("Select mode of operation. \n");
+        printf("Options: Throttle(1)   Open loop comutation(2)   PWM Controlled open loop commutation(3)   Get Halls(4)   \n");
+        mode = getchar();
+
+
+        
+   
+
+            if (atoi(mode) == 1){
+                wait_for_serial_command("Throttle activated, enter any key to continue");
+                // int rpm = 0;
+                // pwm_set_irq_enabled(A_PWM_SLICE, true);
+                // while (true){
+                //     printf("%6d, %6d, %6d, %6d, %2d, %2d\n", current_ma, current_target_ma, duty_cycle, voltage_mv, hall, motorState);               
+                /*                                          RPM FUNCTION
+                    Goal: count how many occurences of a motor state occures in 100 ms then divide by the number of motor states per revolution and convert to rpm from rp100ms
+                          added motor state counter in on_adc_fifo to update 
+                       rpm = motorstate_counter/(number of motor state occurences per revolution)*10*60;
+                */
+                // 
+                //     gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
+                //     sleep_ms(100);
+                //}
+                // pwm_set_irq_enabled(A_PWM_SLICE, false);
+
+
+
+
+                mode = getchar_timeot_us(0);
+                if (atoi(mode) == 9){
+                    break;
+                }
+            }
+
+            else if (atoi(mode) == 2){
+                printf("Open looop commutation activated \n");
+                // commutate_open_loop();
+            }
+              
+
+            else if (atoi(mode) == 3){
+                printf("PWM Controlled open loop commutation \n");
+                // commutate_open_loop_Computer_Control();
+            }
+
+            else if (atoi(mode) == 4){
+                printf("Retrieving Hall Table \n");
+                identify_halls();
+            }
+
+
+            else{
+                printf("Invalid mode try again \n");
+            }
+        
     }
 
     return 0;
@@ -405,32 +571,3 @@ int main() {
 
 
 
-/*
-Future imporvement for stall protection (from chat)
-
-
-// globals
-volatile uint32_t last_hall_tick = 0;   // incremented in on_adc_fifo() or a hall IRQ
-volatile uint64_t ticks_since_init = 0; // you already have this
-
-// Call this inside on_adc_fifo(), after reading halls:
-static uint32_t hall_prev = 0;
-uint32_t hall_now = hall; // your current hall code
-if (hall_now != hall_prev && hall_now != 0 && hall_now != 7) {
-    last_hall_tick = ticks_since_init;   // saw movement
-    hall_prev = hall_now;
-}
-
-// Detect stopped/very slow (tune the threshold for your PWM rate)
-bool no_motion = (ticks_since_init - last_hall_tick) > 8000; // ~0.5 s at 16 kHz
-
-// Decide synchronous enable (time gate + motion)
-bool do_synchronous = (ticks_since_init > 16000) && !no_motion;
-
-// Optional: if no motion, “re-arm” the startup delay
-if (no_motion) {
-    // If throttle is low or duty collapsed, re-arm more aggressively:
-    // ticks_since_init = 0; // uncomment if you want a full 1 s delay again
-}
-
-*/
