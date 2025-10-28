@@ -10,6 +10,7 @@
 #include "hardware/uart.h"
 
 //Voltage of new pedal 0.96V-4.09V
+//Old 0.0V-4.15V
 
 // Begin user config section ---------------------------
 
@@ -24,13 +25,28 @@ uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!
 // uint8_t hallToMotor[8] = {255, 2, 0, 1, 4, 3, 5, 255};  // Example hall table
 
 
+//Old finger throttle
+// const int THROTTLE_LOW = 600;               // ADC value corresponding to minimum throttle, 0-4095
+// const int THROTTLE_HIGH = 2650;             // ADC value corresponding to maximum throttle, 0-4095
 
-const int THROTTLE_LOW = 600;               // ADC value corresponding to minimum throttle, 0-4095
-const int THROTTLE_HIGH = 2650;             // ADC value corresponding to maximum throttle, 0-4095
+//Pedal throttle
+const int THROTTLE_LOW = 1000;               
+const int THROTTLE_HIGH = 2000;
+
 
 const bool CURRENT_CONTROL = true;          // Use current control or duty cycle control
-const int PHASE_MAX_CURRENT_MA = 6000;      // If using current control, the maximum phase current allowed
-const int BATTERY_MAX_CURRENT_MA = 3000;    // If using current control, the maximum battery current allowed
+//Original limits
+// const int PHASE_MAX_CURRENT_MA = 6000;      // If using current control, the maximum phase current allowed
+// const int BATTERY_MAX_CURRENT_MA = 3000;    // If using current control, the maximum battery current allowed
+
+const int PHASE_MAX_CURRENT_MA = 15000;
+const int BATTERY_MAX_CURRENT_MA = 15000;
+
+/*
+The IRF87730 can handle 7A. Split between three pahses we get 21 A max (No heat sink)
+The throttle sets the current target mapped off phase max current but the battery max current sets the max current allowed based on battery specs.
+*/
+
 const int CURRENT_CONTROL_LOOP_GAIN = 200;  // Adjusts the speed of the current control loop
 
 // End user config section -----------------------------
@@ -389,7 +405,7 @@ void commutate_open_loop()
     while(true)
     {
         writePWM(state % 6, 25, false);
-        //printf("State = %d\n", state % 6); //*********** print the motor state being written to
+        printf("State = %d\n", state % 6); //*********** print the motor state being written to
         sleep_ms(50);
         state++;
     }
@@ -471,9 +487,14 @@ int main() {
     pwm_set_irq_enabled(A_PWM_SLICE, true); // Enables interrupts, starting motor commutation
     
     int rpm = 0;
+    
+
 
     while (true) {
-        printf("%6d, %6d, %6d, %6d, %2d, %2d, %2d\n", current_ma, current_target_ma, duty_cycle, voltage_mv, hall, motorState, rpm);
+        float current_A = (float)current_ma/1000;
+        float current_TargetA = (float)current_target_ma / 1000.0;
+        float voltage_V = (float)voltage_mv / 1000.0;
+        printf("%6.2f, %6.2f, %6d, %6.2f, %2d, %2d, %2d\n", current_A, current_TargetA, duty_cycle, voltage_V, hall, motorState, rpm);
 
         gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
 
