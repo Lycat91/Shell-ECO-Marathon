@@ -519,14 +519,10 @@ int main() {
         float current_TargetA = (float)current_target_ma / 1000.0;
         float voltage_V = (float)voltage_mv / 1000.0;
         printf("%6.2f, %6.2f, %6d, %6.2f, %2d, %2d, %2d\n", current_A, current_TargetA, duty_cycle, voltage_V, hall, motorState, rpm);
-
         gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
-
-        
         rpm = (motorstate_counter * 4 * 60) / 23; //23 occurences of motorState 1 in 1 revolution
         motorstate_counter = 0;
-
-        
+        check_serial_input(); //Changes Phase current max based on serial inputs
         sleep_ms(250);
     }
 
