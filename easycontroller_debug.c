@@ -159,7 +159,7 @@ void on_adc_fifo() {
         duty_cycle = MAX(0, MIN(DUTY_CYCLE_MAX, duty_cycle));   // Clamp the duty cycle
         
 
-        ////////////////HIGH TORQUE LOW SPEED OPERATION//////////////////////
+        ////////////////LAUNCH FUNCTION//////////////////////////////////////
         if(rpm < 10 && throttle != 0){
             duty_cycle = 6553; 
         }
