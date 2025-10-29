@@ -9,7 +9,11 @@
 #include "hardware/sync.h"
 #include "hardware/uart.h"
 
-
+//UART COMs
+#define UART_ID   uart1
+#define TX_PIN    4        // UART1 TX (default pin)
+#define RX_PIN    5        // UART1 RX (default pin)
+#define BAUD_RATE 115200
 
 // Begin user config section ---------------------------
 
@@ -138,7 +142,7 @@ void on_adc_fifo() {
     }
         
     throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
-    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-25
+    throttle = MAX(0, MIN(255, throttle));      // Clamp to 0-255
 
     current_ma = (adc_isense - adc_bias) * CURRENT_SCALING;     // Since the current sensor is bidirectional, subtract the zero-current value and scale
     voltage_mv = adc_vsense * VOLTAGE_SCALING;  // Calculate the bus voltage
@@ -502,7 +506,13 @@ int main() {
 
     init_hardware();
 
-    
+    uart_init(UART_ID, BAUD_RATE);
+    gpio_set_function(TX_PIN, GPIO_FUNC_UART);
+    gpio_set_function(RX_PIN, GPIO_FUNC_UART);
+    int counter = 0;
+    char message[64];
+
+
     printf("Hello from Pico!\n");
 
     
@@ -548,7 +558,14 @@ int main() {
             rpm = (motorstate_counter * 4 * 60) / 23; //23 occurences of motorState 1 in 1 revolution
             motorstate_counter = 0;
             check_serial_input_for_Phase_Current(); //Changes Phase current max based on serial inputs
-            sleep_ms(250);
+
+            counter++;
+
+            // Send over UART1 to the other Pico
+            snprintf(message, sizeof(message), "V=%3.2f, I=%3.2f, RPM=%4d, DUTY=%6d, THROTTLE=%3d\n", voltage_V, current_A, rpm, duty_cycle, throttle);
+            printf(message);
+            uart_puts(UART_ID, message);
+                sleep_ms(250);
         }
     }
 
