@@ -9,15 +9,18 @@
 #include "hardware/sync.h"
 #include "hardware/uart.h"
 
-//Voltage of new pedal 0.96V-4.09V
-//Old 0.0V-4.15V
+
 
 // Begin user config section ---------------------------
 
 const bool IDENTIFY_HALLS_ON_BOOT = false;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
 const bool COMPUTER_CONTROL = true;      // If true will enable throttle control via serial communication 
-
+int LAUNCH_DUTY_CYCLE = 6553;
+int PHASE_MAX_CURRENT_MA = 15000;
+int BATTERY_MAX_CURRENT_MA = 15000;
+const int THROTTLE_LOW = 1000;               
+const int THROTTLE_HIGH = 2000;
 
 
 uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
@@ -29,9 +32,8 @@ uint8_t hallToMotor[8] = {255, 0, 4, 5, 2, 1, 3, 255};  //Correct Hall Table !!!
 // const int THROTTLE_LOW = 600;               // ADC value corresponding to minimum throttle, 0-4095
 // const int THROTTLE_HIGH = 2650;             // ADC value corresponding to maximum throttle, 0-4095
 
-//Pedal throttle
-const int THROTTLE_LOW = 1000;               
-const int THROTTLE_HIGH = 2000;
+//Voltage of new pedal 0.96V-4.09V
+//Old 0.0V-4.15V
 
 
 const bool CURRENT_CONTROL = true;          // Use current control or duty cycle control
@@ -39,8 +41,7 @@ const bool CURRENT_CONTROL = true;          // Use current control or duty cycle
 // const int PHASE_MAX_CURRENT_MA = 6000;      // If using current control, the maximum phase current allowed
 // const int BATTERY_MAX_CURRENT_MA = 3000;    // If using current control, the maximum battery current allowed
 
-int PHASE_MAX_CURRENT_MA = 15000;
-int BATTERY_MAX_CURRENT_MA = 15000;
+
 
 /*
 The IRFB7730 can handle 7A. Split between three pahses we get 21 A max (No heat sink)
@@ -161,7 +162,7 @@ void on_adc_fifo() {
 
         ////////////////LAUNCH FUNCTION//////////////////////////////////////
         if(rpm < 10 && throttle != 0){
-            duty_cycle = 6553; 
+            duty_cycle = LAUNCH_DUTY_CYCLE; 
         }
         /////////////////////////////////////////////////////////////////////
 
