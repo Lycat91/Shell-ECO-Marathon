@@ -20,7 +20,7 @@
 const bool IDENTIFY_HALLS_ON_BOOT = false;   // If true, controller will initialize the hall table by slowly spinning the motor
 const bool IDENTIFY_HALLS_REVERSE = false;  // If true, will initialize the hall table to spin the motor backwards
 const bool COMPUTER_CONTROL = true;      // If true will enable throttle control via serial communication 
-int LAUNCH_DUTY_CYCLE = 9830;
+int LAUNCH_DUTY_CYCLE = 6553;
 int PHASE_MAX_CURRENT_MA = 15000;
 int BATTERY_MAX_CURRENT_MA = 15000;
 const int THROTTLE_LOW = 1000;               
