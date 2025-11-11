@@ -92,8 +92,4 @@ while True:
                 except Exception as e:
                     print("Parse error:", e, "on line:", line)
 
-    # ---------------- OLED DISPLAY (always safe) ----------------
-    # Use a safe “display_time” even if no UART data yet
-    display_time = time.ticks_diff(time.ticks_ms(), start_time) / 1000.0  # NEW
-
    
