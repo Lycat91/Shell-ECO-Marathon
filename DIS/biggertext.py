@@ -40,14 +40,15 @@ class OLED_1inch3(framebuf.FrameBuffer):
                   0xD9, 0x22, 0xDB, 0x35, 0xAD, 0x8A, 0xAF]:
             self._cmd(c)
 
+    
     def show(self):
-        # write 64 pages of 16 bytes each
-        for page in range(64):
-            column = (63 - page) if MIRROR_X else page
-            self._cmd(0x00 + (column & 0x0F))
-            self._cmd(0x10 + (column >> 4))
-            start = page * 16
+        for stripe in range(64):
+            column = stripe            # 2) no software mirror
+            self._cmd(0x00 | (column & 0x0F))
+            self._cmd(0x10 | (column >> 4))
+            start = stripe * 16
             self._data(memoryview(self.buffer)[start:start+16])
+
 
 # ---- text scaling helpers (mono, no colors) ----
 def _draw_char_scaled(fb, ch, x, y, s=3):
@@ -69,9 +70,9 @@ def text_scaled(fb, s, x, y, scale=3, spacing=1):
 oled = OLED_1inch3()
 
 # Example current speed; replace with your sensor value
-current_speed = 12.3  # mph
+current_speed = 30.7  # mph
 
 oled.fill(0)
-text_scaled(oled, "{:.1f}".format(current_speed), 6, 8, scale=3)  # big
+text_scaled(oled, "{:.1f}".format(current_speed), 6, 8, scale=4)  # big
 text_scaled(oled, "mph", 100, 42, scale=1)                        # small label
 oled.show()
