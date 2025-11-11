@@ -24,6 +24,3 @@ for i in range(999):
     i_time = utime.ticks_diff(draw_start_time, final_time)/1000
 
     print(i/1000, "draw:", draw_time, " total: ", i_time)
-
-
-    config.uart
