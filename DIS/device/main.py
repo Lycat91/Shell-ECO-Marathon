@@ -5,7 +5,6 @@ import comm
 oled = config.OLED_1inch3()
 from machine import Pin, SPI
 from machine import UART, Pin
-import time
 import math
 
 
@@ -95,12 +94,10 @@ while True:
                     #     f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
                     # )
 
-                    oled.draw_speed(throttle)
-
-                    if keyA.value == 0:
+                    if keyA.value() == 0:
                         mode += 1
                         print("Forward switch")
-                    if keyB.value == 0:
+                    if keyB.value() == 0:
                         mode -= 1
                         print("Backward switch")
 
@@ -111,16 +108,12 @@ while True:
                         mode = 0
 
                     if mode == 0:
-                        oled.draw_speed(mph)
+                        oled.draw_speed(mph,mode)
                     if mode == 1:
-                        oled.draw_speed(time)
+                        oled.draw_speed(elapsed_time,mode)
                     if mode == 2:
-                        oled.draw_speed(voltage)
-
-                    if throttle != 0 and rpm < 30:
-                        print(
-                            "----------------------------------Stall occurred!------------------------------------"
-                        )
+                        oled.draw_speed(voltage,mode)
+                    print("mode =", mode)
 
                 except Exception as e:
                     print("Parse error:", e, "on line:", line)

@@ -97,7 +97,7 @@ class OLED_1inch3(framebuf.FrameBuffer):
                         self.fill_rect(xx, yy, scale, scale, color)
                 m >>= 1
 
-    def draw_speed(self, value):
+    def draw_speed(self, value, mode):
         """
         Draw a numeric speed like 16.2 inside fixed boxes:
         [0-39], [41-80], decimal point, [87-127]
@@ -109,7 +109,13 @@ class OLED_1inch3(framebuf.FrameBuffer):
         self.fill_rect(86, 42, 5, 5, 1)
 
         # label
-        self.text("mph", 100, 54, 1)
+        if mode == 0:
+            self.text("mph", 100, 54, 1)
+        if mode == 1:
+            self.text("sec", 100, 54, 1)
+        if mode == 2:
+            self.text(" V ", 100, 54, 1)
+
 
         # format and clamp number
         s = "{:.1f}".format(value)
