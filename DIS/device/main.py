@@ -111,9 +111,9 @@ while True:
                         distance = 0
 
                     if mode < 0:
-                        mode = 3
+                        mode = 4
 
-                    if mode > 3:
+                    if mode > 4:
                         mode = 0
 
                     if mode == 0:
@@ -126,6 +126,9 @@ while True:
                         oled.draw_speed(current, mode)
                     
                     if mode == 3:
+                        oled.draw_speed(voltage, mode)
+                    
+                    if mode == 4:
                         oled.draw_speed(distance, mode)
 
                     print("mode =", mode)

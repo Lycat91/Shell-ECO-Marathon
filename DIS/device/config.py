@@ -115,8 +115,10 @@ class OLED_1inch3(framebuf.FrameBuffer):
             self.text("sec", 100, 54, 1)
         if mode == 2:
             self.text(" A ", 100, 54, 1)
-        if mode == 2:
-            self.text("Miles", 100, 54, 1)
+        if mode == 3:
+            self.text(" V ", 100, 54, 1)
+        if mode == 4:
+            self.text(" Miles ", 100, 54, 1)
 
 
         # format and clamp number
