@@ -88,13 +88,13 @@ while True:
 
                     power = voltage * current
                     mph = rpm * wheel_circumference_in * 60 / 63360.0
-                    distance += mph * sample_dt / 3600  # distance in miles
+                    distance += mph * sample_dt / 3600 * 100  # distance in miles
 
-                    # print(
-                    #     f"Time: {elapsed_time:.2f}s | delta t: {sample_dt:.2f}s | "
-                    #     f"Voltage: {voltage:.2f} V | Current: {current:.2f} A | RPM: {rpm} | Speed: {mph:.2f} Mph |"
-                    #     f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
-                    # )
+                    print(
+                        f"Time: {elapsed_time:.2f}s | delta t: {sample_dt:.2f}s | "
+                        f"Voltage: {voltage:.2f} V | Current: {current:.2f} A | RPM: {rpm} | Speed: {mph:.2f} Mph |"
+                        f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
+                    )
                     # Display switching logic
                     if keyA.value() == 0:
                         mode += 1

@@ -61,13 +61,16 @@ class OLED_1inch3(framebuf.FrameBuffer):
             self.write_cmd(cmd)
 
     def show(self):
-        self.write_cmd(0xB0)
-        for page in range(0, 64):
-            column = page if self.rotate == 180 else (63 - page)
-            self.write_cmd(0x00 + (column & 0x0F))
-            self.write_cmd(0x10 + (column >> 4))
-            for num in range(0, 16):
-                self.write_data(self.buffer[page * 16 + num])
+            self.write_cmd(0xB0)
+            for page in range(0, 64):
+                column = page if self.rotate == 180 else (63 - page)
+                self.write_cmd(0x00 + (column & 0x0F))
+                self.write_cmd(0x10 + (column >> 4))
+                # OPTIMIZATION: Slice the buffer and send 16 bytes at once
+                # instead of looping 16 times for 1 byte.
+                start_index = page * 16
+                end_index = start_index + 16
+                self.write_data(self.buffer[start_index:end_index])
 
         # --- cache for small glyphs (digits only) ---
     def _digit_rows(self, ch):
@@ -105,20 +108,28 @@ class OLED_1inch3(framebuf.FrameBuffer):
         # clear display first
         self.fill(0)
 
-        # draw decimal dot
-        self.fill_rect(86, 42, 5, 5, 1)
 
         # label
         if mode == 0:
             self.text("mph", 100, 54, 1)
+            # draw decimal dot
+            self.fill_rect(86, 42, 5, 5, 1)
         if mode == 1:
             self.text("sec", 100, 54, 1)
+            # draw decimal dot
+            self.fill_rect(86, 42, 5, 5, 1)
         if mode == 2:
             self.text(" A ", 100, 54, 1)
+            # draw decimal dot
+            self.fill_rect(86, 42, 5, 5, 1)
         if mode == 3:
             self.text(" V ", 100, 54, 1)
+            # draw decimal dot
+            self.fill_rect(86, 42, 5, 5, 1)
         if mode == 4:
             self.text(" Miles ", 100, 54, 1)
+            # draw decimal dot
+            self.fill_rect(0, 42, 5, 5, 1)
 
 
         # format and clamp number
