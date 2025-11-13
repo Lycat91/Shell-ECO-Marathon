@@ -114,7 +114,7 @@ class OLED_1inch3(framebuf.FrameBuffer):
         if mode == 1:
             self.text("sec", 100, 54, 1)
         if mode == 2:
-            self.text(" V ", 100, 54, 1)
+            self.text(" A ", 100, 54, 1)
         if mode == 2:
             self.text("Miles", 100, 54, 1)
 

@@ -89,6 +89,7 @@ while True:
                     power = voltage * current
                     mph = rpm * wheel_circumference_in * 60 / 63360.0
                     distance += mph * sample_dt / 3600  # distance in miles
+                    current_A=current/1000
 
                     # print(
                     #     f"Time: {elapsed_time:.2f}s | delta t: {sample_dt:.2f}s | "
@@ -123,10 +124,10 @@ while True:
                         oled.draw_speed(elapsed_time, mode)
 
                     if mode == 2:
-                        oled.draw_speed(voltage, mode)
+                        oled.draw_speed(current_A, mode)
                     
                     if mode == 3:
-                        oled.draw_speed(voltage, distance)
+                        oled.draw_speed(distance, mode)
 
                     print("mode =", mode)
 
