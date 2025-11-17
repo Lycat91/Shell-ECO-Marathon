@@ -1,6 +1,5 @@
 import config
 import utime as time
-import comm
 
 oled = config.OLED_1inch3()
 from machine import Pin, SPI
@@ -35,12 +34,13 @@ uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
 # Live values
 voltage = 0.0
 current = 0.0
-rpm = 5
+rpm = 0
 duty = 0
 throttle = 0.0
 buffer = ""
-mode = 0
-last_mode = mode
+screen = 0
+last_screen = screen
+NUM_SCREENS = 5
 distance = 0
 
 # Wheel parameters
@@ -129,13 +129,13 @@ while True:
     last_keyA = a_now
     last_keyB = b_now
 
-    # ---- Single-button actions (mode change) ----
+    # ---- Single-button actions (screen change) ----
     if pressedA and not b_now == 0:   # A pressed, B not currently held
-        mode += 1
+        screen += 1
         print("Forward switch")
 
     if pressedB and not a_now == 0:   # B pressed, A not currently held
-        mode -= 1
+        screen -= 1
         print("Backward switch")
 
     # ---- Both buttons: reset time/distance ----
@@ -153,15 +153,12 @@ while True:
         # If not both held, keep reset timer current
         last_reset_time = t_now
 
-    # Wrap mode
-    if mode < 0:
-        mode = 4
-    if mode > 4:
-        mode = 0
-
-    if mode != last_mode:
-        print("mode =", mode)
-        last_mode = mode
+    # Wrap screen
+    new_screen = screen % NUM_SCREENS
+    if new_screen != last_screen:
+        print("screen: ", new_screen)
+        last_screen = new_screen
+    screen = new_screen
 
     # --------- Time/Distance Reset --------------------
     if keyA.value() == 0 and keyB.value() == 0:
@@ -170,24 +167,19 @@ while True:
         elapsed_time = 0
         distance = 0
 
-    if mode < 0:
-        mode = 4
-    if mode > 4:
-        mode = 0
-
     # --------- DISPLAY (always runs) ------------------
-    if mode == 0:
+    if screen == 0:
         oled.draw_large_num(mph, "MPH")
-    if mode == 1:
+    if screen == 1:
         oled.draw_time(elapsed_time, "ELAPSED")
-    if mode == 2:
+    if screen == 2:
         oled.draw_large_num(current, "AMPS")
-    if mode == 3:
-
+    if screen == 3:
         oled.draw_large_num(voltage, "VOLTS")
-    if mode == 4:
-        oled.draw_speed(distance, mode)
-
+    if screen == 4:
+        oled.draw_speed(distance, screen)
+        
+    rpm += 1
 
     # print(
     #     f"Time: {elapsed_time:.2f}s | delta t: {sample_dt:.2f}s | "

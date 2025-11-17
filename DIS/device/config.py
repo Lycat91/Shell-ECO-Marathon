@@ -56,12 +56,8 @@ class OLED_1inch3(framebuf.FrameBuffer):
         # ---- Precompute fixed slot positions for MM:SS ----
         dmed = self.w_digits_med.stringlen("0")
         colon_w = self.w_digits_med.stringlen(":")
-        GAP_MED = 0   # tweak this if spacing looks weird
-
         # layout: M M : S S with gaps
-        total_w_med = dmed * 4 + colon_w + GAP_MED * 4
         x0m = -4
-
         self._time_x_m10   = x0m
         self._time_x_m1    = self._time_x_m10   + dmed - 4
         self._time_x_colon = self._time_x_m1    + dmed - 4
@@ -70,10 +66,14 @@ class OLED_1inch3(framebuf.FrameBuffer):
 
         # vertical center for the MM:SS display (you can tweak later)
         self._time_y = 5
-
         # Vertical positioning
         self._big_slot_y = 0
 
+        #--------- Alert State ----------------
+        self._msg_top = None
+        self._msg_bottom = None
+        self._msg_until  = 0 # ms timestamp; 0 means no active message
+        
     def write_cmd(self, cmd):
         self.cs(1); self.dc(0); self.cs(0)
         self.spi.write(bytearray([cmd]))
@@ -345,3 +345,60 @@ class OLED_1inch3(framebuf.FrameBuffer):
         self.text(label, label_x, label_y, 1)
 
         self.show()
+
+    def draw_alert(self, top, bottom):
+        """
+        Draw two words in the letter font
+        'top' goes on the upper half
+        'bottom' goes on the bottom half
+        """
+        self.fill(0)
+
+        if top:
+            top = top.upper()
+            w_top = self.w_letters_big.stringlen(top)
+            x_top = max(0, (self.width - w_top) // 2)
+            self.w_letters_big.set_textpos(x_top, 0)
+            self.w_letters_big.printstring(top)
+        if bottom:
+            bottom = bottom.upper()
+            w_bottom = self.w_letters_big.stringlen(bottom)
+            x_bottom = max(0, (self.width - w_bottom)// 2)
+            self.w_letters_big.set_textpos(x_bottom, 24)
+            self.w_letters_big.printstring(bottom)
+        
+        self.show()
+
+        h = self.w_letters_big.height
+
+    def show_alert(self, top, bottom, seconds):
+        """
+        Schedule an alert for a certain amount of seconds
+        """
+
+        # Convert seconds to ms
+        ms = int(seconds * 1000)
+        now = time.ticks_ms()
+        self._msg_top = top
+        self.msg_bottom = bottom
+        self._msg_until = time.ticks_add(now, ms)
+    
+    def update_alert(self):
+        """
+        If an alert is active and not expired, draw it and return True
+        If there's no alert active, return False
+        """
+
+        if self._msg_top is None:
+            return False
+        
+        now = time.ticks_ms()
+        if time.ticks_diff(self._msg_until, now) <= 0:
+            self._msg_top = None
+            self._msg_bottom = None
+            self._msg_until = 0
+            return False
+        
+        # Otherwise, draw the alert
+        self.draw_alert(self._msg_top, self._msg_bottom)
+        return True
