@@ -76,7 +76,7 @@ const uint A_PWM_SLICE = 0;
 const uint B_PWM_SLICE = 1;
 const uint C_PWM_SLICE = 2;
  
-const uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
+const uint F_PWM = 16000;   // Desired PWM frequency                                              
 const uint FLAG_PIN = 2;
 const uint HALL_OVERSAMPLE = 8;
 
@@ -179,7 +179,7 @@ void on_adc_fifo() {
         if(rpm < 30 && throttle != 0){
             duty_cycle = LAUNCH_DUTY_CYCLE; 
         }
-        /////////////////////////////////////////////////////////////////////
+     
 
         bool do_synchronous = ticks_since_init > 16000;    // Only enable synchronous switching some time after beginning control loop. This allows control loop to stabilize
         writePWM(motorState, (uint)(duty_cycle / 256), do_synchronous);
@@ -533,10 +533,13 @@ int main() {
                         //MODE SELECT//
     //wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
     int mode;
+    int signal = 's';
+    int duty_cycle_norm = 0;
+    int throttle_norm = 0;
     printf("Select mode of operation");
     printf("Current control: 0     Open loop commutate: 1     Open loop comutate serial command pwm: 2");
-    mode=getchar();
-
+    //mode=getchar();
+    mode = '0';
     if (mode == '1'){
         commutate_open_loop();   // May be helpful for debugging electrical problems
     }
@@ -561,11 +564,10 @@ int main() {
 
     if (mode == '0'){
         while (true) {
-            float current_A = (float)current_ma/1000;
-            float current_TargetA = (float)current_target_ma / 1000.0;
-            float voltage_V = (float)voltage_mv / 1000.0;
-            printf("%6.2f, %6.2f, %6d, %6.2f, %2d, %2d, %2d\n", current_A, current_TargetA, duty_cycle, voltage_V, hall, motorState, rpm);
-            //printf("ADC_THROTTLE=%4d\n", adc_throttle);
+            //float current_A = (float)current_ma/1000;
+            //float current_TargetA = (float)current_target_ma / 1000.0;
+            //float voltage_V = (float)voltage_mv / 1000.0;
+            //printf("%6.2d, %6.2f, %6d, %6.2d, %6d, %3d, %2d\n", current_ma, current_TargetA, duty_cycle, voltage_mv, duty_cycle, throttle, rpm);
             if(current_target_ma == ECO_CURRENT_ma){
                 printf("----------------------------ECO MODE ACTIVATED(----------------------------");
             }
@@ -575,10 +577,14 @@ int main() {
             check_serial_input_for_Phase_Current(); //Changes Phase current max based on serial inputs
 
             counter++;
-
+            duty_cycle_norm = duty_cycle*100/DUTY_CYCLE_MAX;
+            throttle_norm = throttle*100/255;
+            int UARTvoltage_mv=voltage_mv/100;
             // Send over UART1 to the other Pico
-            snprintf(message, sizeof(message), "V=%3.2f, I=%3.2f, RPM=%4d, DUTY=%6d, THROTTLE=%3d\n", voltage_V, current_A, rpm, duty_cycle, throttle);
-            //printf(message);
+            snprintf(message, sizeof(message), "%c%03d%06d%03d%03d%03d\n", signal, UARTvoltage_mv, current_ma, rpm, duty_cycle_norm, throttle_norm);
+            printf("%3d\n",rpm);
+            printf("%6d\n",current_ma);
+            printf(message);
             uart_puts(UART_ID, message);
             sleep_ms(250);
         }
