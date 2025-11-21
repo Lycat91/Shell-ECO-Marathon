@@ -29,7 +29,7 @@ last_reset_time = 0
 # ---------------------- Main Program -----------------------
 
 # UART Setup
-uart = UART(1, baudrate=115200, tx=Pin(4), rx=Pin(5))
+uart = config.uart
 
 # Live values
 voltage = 0.0
@@ -52,8 +52,8 @@ print("Waiting for UART data...\n")
 # ----------------- TIME VARIABLES -----------------
 start_time = time.ticks_ms()
 last_sample_time = start_time
-elapsed_time = 0.0  # NEW: init so OLED can show time before UART data
-sample_dt = 0.0  # NEW
+elapsed_time = 0.0
+sample_dt = 0.0
 # ---------------------------------------------------
 
 while True:
@@ -76,29 +76,31 @@ while True:
             while "\n" in buffer:
                 line, buffer = buffer.split("\n", 1)
                 line = line.strip()
+                # print(line)       #DEBUG
                 if not line:
                     continue
 
                 try:
-                    parts = line.split(",")
-                    for p in parts:
-                        p = p.strip()
-                        if "=" in p:
-                            key, value = p.split("=", 1)
-                            key = key.strip()
-                            value = value.strip()
-                            if key == "V":
-                                voltage = float(value)
-                            elif key == "I":
-                                current = float(value)
-                            elif key == "RPM":
-                                rpm = int(float(value))
-                            elif key == "DUTY":
-                                duty = int(float(value))
-                            elif key == "THROTTLE":
-                                throttle = float(value) / 255 * 100
+                    # Determine type of message based on identifying char
+
+                    # If Status message, parse the message
+                    if line[0] == "s":
+                        # print([line[0]])
+                        voltage = float(line[1:4])/10
+                        current = float(line[4:11])/1000
+                        rpm = int(line[11:14])
+                        duty = int(line[14:17])
+                        throttle = int(line[17:20])
+                        print(line[1:4], line[4:10], line[11:14], line[14:17], line[17:20])
+                        
                 except Exception as e:
                     print("Parse error:", e, "on line:", line)
+
+                # print(
+                #     f"Voltage: {voltage:.2f} V | Current: {current:.2f} A | RPM: {rpm} | Speed: {mph:.2f} Mph |"
+                #     f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
+                # )
+            
 
     # --------- Derived Values (runs even with stale data)
     power = voltage * current
@@ -178,12 +180,10 @@ while True:
         oled.draw_large_num(voltage, "VOLTS")
     if screen == 4:
         oled.draw_speed(distance, screen)
+    
         
-    rpm += 1
+    # Need a screen for target speed
 
-    # print(
-    #     f"Time: {elapsed_time:.2f}s | delta t: {sample_dt:.2f}s | "
-    #     f"Voltage: {voltage:.2f} V | Current: {current:.2f} A | RPM: {rpm} | Speed: {mph:.2f} Mph |"
-    #     f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
-    # )
+
+
 

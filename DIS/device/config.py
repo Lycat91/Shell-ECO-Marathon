@@ -46,12 +46,10 @@ class OLED_1inch3(framebuf.FrameBuffer):
         self.w_digits_med.set_wrap(False)
 
         # ---- Precompute fixed slot positions for DD.D ----
-        digit_w = self.w_digits_large.stringlen("0")
-        x0 = 0
-        self._big_slot_x0   = x0                      # tens
-        self._big_slot_x1   = x0 + digit_w            # ones
-        self._big_slot_xdot = x0 + 2 * digit_w - 2        # '.'
-        self._big_slot_x2   = self._big_slot_xdot + 17  # tenths
+        self._big_slot_x0   = 9                      # tens
+        self._big_slot_x1   = 43           # ones
+        self._big_slot_xdot = 79       # '.'
+        self._big_slot_x2   = 93  # tenths
 
         # ---- Precompute fixed slot positions for MM:SS ----
         dmed = self.w_digits_med.stringlen("0")
