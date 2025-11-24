@@ -209,7 +209,7 @@ class OLED_1inch3(framebuf.FrameBuffer):
 
         self.show()
         
-    def draw_large_num(self, num, label, invert=False):
+    def draw_large_num(self, num, label, uart_blink, timer_state, invert=False):
         """
         Draw speed as fixed DD.D using precomputed slots.
         Set invert=True to flip colors before showing.
@@ -264,12 +264,15 @@ class OLED_1inch3(framebuf.FrameBuffer):
         label_y = self.height - 8
         self.text(label, label_x, label_y, 1)
 
+        # Draw the status bar
+        self.draw_status(uart_blink, timer_state)
+
         if invert:
             self.invert_buffer()
 
         self.show()
 
-    def draw_time(self, seconds, label):
+    def draw_time(self, seconds, label, uart_blink, timer_state):
         """
         Draw elapsed time as MM:SS using the medium digit font.
         - Always shows leading zeros (00:05, 01:23, 10:00, etc).
@@ -324,6 +327,9 @@ class OLED_1inch3(framebuf.FrameBuffer):
         label_y = self.height - 8
         self.text(label, label_x, label_y, 1)
 
+        # Draw the status bar
+        self.draw_status(uart_blink, timer_state)
+
         self.show()
 
     def draw_status(self, uart_blink, timer_state):
@@ -351,8 +357,6 @@ class OLED_1inch3(framebuf.FrameBuffer):
         elif timer_state == "paused":
             # White text, no box
             self.text("REC", x_rec, y, 1)
-
-        self.show()
 
     def check_button(self):
         """

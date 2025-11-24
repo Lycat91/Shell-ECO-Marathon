@@ -33,6 +33,7 @@ last_screen = screen
 NUM_SCREENS = 6
 distance = 0
 timer_running = False
+timer_state = 'reset'
 timer_elapsed_ms = 0
 timer_start_ms = time.ticks_ms()
 target_mph = 0.0
@@ -89,8 +90,10 @@ while True:
                         current = float(line[4:10])/1000
                         rpm = int(line[10:13])
                         duty = int(line[13:16])
-                        throttle = int(line[16:])
-                        print(line, voltage, current, rpm, duty, throttle)
+                        throttle = int(line[16:19])
+                        eco = int(line[19:])
+                        if eco:
+                            print(current, eco)
                         
                 except Exception as e:
                     print("Parse error:", e, "on line:", line)
@@ -111,16 +114,19 @@ while True:
         if timer_running:
             timer_elapsed_ms += time.ticks_diff(current_time, timer_start_ms)
             timer_running = False
+            timer_state = 'paused'
             print("Timer stopped")
         else:
             timer_start_ms = current_time
             timer_running = True
+            timer_state = 'running'
             print("Timer started")
 
     if timer_reset:
         timer_elapsed_ms = 0
         distance = 0
         timer_running = False
+        timer_state = 'reset'
         timer_start_ms = current_time
         oled.show_alert("TIMER", "RESET", 3)
 
@@ -154,17 +160,17 @@ while True:
 
     if screen == 0:
         invert_speed = target_mph > 0 and mph < target_mph
-        oled.draw_large_num(mph, "MPH", invert=invert_speed)
+        oled.draw_large_num(mph, "MPH", uart_blink, timer_state, invert=invert_speed)
     if screen == 1:
-        oled.draw_time(elapsed_time, "ELAPSED")
+        oled.draw_time(elapsed_time, "ELAPSED", uart_blink, timer_state)
     if screen == 2:
-        oled.draw_large_num(current, "AMPS")
+        oled.draw_large_num(current, "AMPS", uart_blink, timer_state)
     if screen == 3:
-        oled.draw_large_num(voltage, "VOLTS")
+        oled.draw_large_num(voltage, "VOLTS", uart_blink, timer_state)
     if screen == 4:
         oled.draw_demo_distance(distance)
     if screen == 5:
-        oled.draw_large_num(target_mph, "TARGET MPH")
+        oled.draw_large_num(target_mph, "TARGET MPH", uart_blink, timer_state)
 
 
     # # Fluctuations around the target speed for debug purposes
