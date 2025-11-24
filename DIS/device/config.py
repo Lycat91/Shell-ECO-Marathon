@@ -19,9 +19,6 @@ class OLED_1inch3(framebuf.FrameBuffer):
         self.width = 128
         self.height = 64
         self.rotate = 180
-        self._glyph_cache = {}      
-        self._tiny = bytearray(8)
-        self._gfb = framebuf.FrameBuffer(self._tiny, 8, 8, framebuf.MONO_HMSB)
 
         self.cs = Pin(CS, Pin.OUT)
         self.rst = Pin(RST, Pin.OUT)
@@ -71,6 +68,20 @@ class OLED_1inch3(framebuf.FrameBuffer):
         self._msg_top = None
         self._msg_bottom = None
         self._msg_until  = 0 # ms timestamp; 0 means no active message
+
+        # -------- Button state ----------
+        now = time.ticks_ms()
+        self.key0 = KEY0
+        self.key1 = KEY1
+        self._debounce_ms = 150
+        self._longpress_ms = 3000
+        self._reset_alert_ms = 3000
+        self._last_key0 = self.key0.value()
+        self._last_key1 = self.key1.value()
+        self._last_time_k0 = now
+        self._last_time_k1 = now
+        self._k1_press_start = None
+        self._k1_reset_fired = False
         
     def write_cmd(self, cmd):
         self.cs(1); self.dc(0); self.cs(0)
@@ -144,96 +155,65 @@ class OLED_1inch3(framebuf.FrameBuffer):
             end_index = start_index + 16
             self.write_data(self.buffer[start_index:end_index])
 
-        # --- cache for small glyphs (digits only) ---
-    def _digit_rows(self, ch):
-        """Return 8x8 bitmap rows for digits 0-9 (cached)."""
-        r = self._glyph_cache.get(ch)
-        if r is not None:
-            return r
-        self._gfb.fill(0)
-        self._gfb.text(ch, 0, 0, 1)
-        r = bytes(self._tiny)
-        self._glyph_cache[ch] = r
-        return r
+    def invert_buffer(self):
+        """Invert the current framebuffer pixels in memory (no show)."""
+        for i in range(len(self.buffer)):
+            self.buffer[i] ^= 0xFF
 
-    def _draw_scaled_char(self, ch, x, y, scale=4, color=1):
-        """Draw one scaled character (digit) at x,y."""
-        rows = self._digit_rows(ch)
-        for r in range(8):
-            b = rows[r]
-            yy = y + r * scale
-            if yy >= self.height or yy + scale <= 0:
-                continue
-            m = 0x80
-            for c in range(8):
-                if b & m:
-                    xx = x + (7-c) * scale
-                    if xx < self.width and xx + scale > 0:
-                        self.fill_rect(xx, yy, scale, scale, color)
-                m >>= 1
-
-    def draw_speed(self, value, mode):
-        """
-        Draw a numeric speed like 16.2 inside fixed boxes:
-        [0-39], [41-80], decimal point, [87-127]
-        """
-        # clear display first
-        self.fill(0)
-
-
-        # label
-        if mode == 0:
-            self.text("mph", 100, 54, 1)
-            # draw decimal dot
-            self.fill_rect(86, 42, 5, 5, 1)
-        if mode == 1:
-            self.text("sec", 100, 54, 1)
-            # draw decimal dot
-            self.fill_rect(86, 42, 5, 5, 1)
-        if mode == 2:
-            self.text(" A ", 100, 54, 1)
-            # draw decimal dot
-            self.fill_rect(86, 42, 5, 5, 1)
-        if mode == 3:
-            self.text(" V ", 100, 54, 1)
-            # draw decimal dot
-            self.fill_rect(86, 42, 5, 5, 1)
-        if mode == 4:
-            self.text(" Miles ", 75, 54, 1)
-            # draw decimal dot
-            self.fill_rect(0, 42, 5, 5, 1)
-
-
-        # format and clamp number
-        s = "{:.1f}".format(value)
-        if len(s) == 4 and s[1] == "0" and s[0] == "0":
-            s = s[1:]  # strip leading zero if needed
-
-        # split digits
-        # Example "16.2" -> d1='1', d2='6', d3='2'
-        parts = s.split(".")
-        whole = parts[0]
-        dec = parts[1] if len(parts) > 1 else "0"
-
-        if len(whole) == 1:
-            d1 = "0"
-            d2 = whole[0]
-        else:
-            d1, d2 = whole[-2], whole[-1]
-        d3 = dec[0]
-
-        # draw scaled digits (adjust scale/offset as needed)
-        scale = 6
-        y_offset = 4
-        self._draw_scaled_char(d1, 0,  y_offset, scale)
-        self._draw_scaled_char(d2, 41, y_offset, scale)
-        self._draw_scaled_char(d3, 87, y_offset, scale)
-
+    def invert_screen(self):
+        """Invert the current framebuffer pixels and push to display."""
+        self.invert_buffer()
         self.show()
 
-    def draw_large_num(self, num, label):
+
+    def draw_demo_distance(self, distance):
+        """Draw distance that caps at out .999 for demo purposes only"""
+        # Turn into integer in thousands, clamp, then peel off digits n1, n2, n3
+        distance = int(distance * 1000)
+
+        if distance < 0:
+            distance = 0
+        if distance > 999:
+            distance = 999
+
+        # Get each digit from distance in n1, n2, n3 order
+        # Also get the length in pixels for each digit
+        n1 = distance // 100
+        n2 = (distance // 10) % 10
+        n3 = distance % 10
+
+        self.fill(0)
+        y = self._big_slot_y
+        self.w_digits_large.set_wrap(False)
+
+        # Decimal point
+        self.w_digits_large.set_textpos(0, y)
+        self.w_digits_large.printstring(".")
+
+        # Tenths digit (n1)
+        self.w_digits_large.set_textpos(14, y)
+        self.w_digits_large.printstring(str(n1))
+
+        # Hundredths digit (n2)
+        self.w_digits_large.set_textpos(53, y)
+        self.w_digits_large.printstring(str(n2))
+
+        # Thousandths digit (n3)
+        self.w_digits_large.set_textpos(91, y)
+        self.w_digits_large.printstring(str(n3))
+
+        # Draw the label
+        label = "MILES"
+        label_x = self.width - len(label) * 8
+        label_y = self.height - 8
+        self.text(label, label_x, label_y, 1)
+
+        self.show()
+        
+    def draw_large_num(self, num, label, invert=False):
         """
         Draw speed as fixed DD.D using precomputed slots.
+        Set invert=True to flip colors before showing.
         """
 
         # Clamp range
@@ -284,6 +264,9 @@ class OLED_1inch3(framebuf.FrameBuffer):
         label_x = self.width - len(label) * 8
         label_y = self.height - 8
         self.text(label, label_x, label_y, 1)
+
+        if invert:
+            self.invert_buffer()
 
         self.show()
 
@@ -344,6 +327,85 @@ class OLED_1inch3(framebuf.FrameBuffer):
 
         self.show()
 
+    def draw_status(self, uart_blink, timer_state):
+        """
+        Draw UART and timer indicators on the bottom row without clearing full screen.
+        uart_blink: bool toggled when UART message is seen; shows 'U' when True.
+        timer_state: 'running' -> inverted 'REC' (black on white box)
+                     'paused'  -> white 'REC' text
+                     other     -> hidden
+        """
+        y = self.height - 8
+        # Clear status region
+        self.fill_rect(0, y, 40, 8, 0)
+
+        # UART indicator
+        if uart_blink:
+            self.text("U", 0, y, 1)
+
+        # Timer indicator
+        x_rec = 11  # 8px char + 3px gap
+        if timer_state == "running":
+            # White box with black text
+            self.fill_rect(x_rec - 1, y - 1, 26, 10, 1)
+            self.text("REC", x_rec, y, 0)
+        elif timer_state == "paused":
+            # White text, no box
+            self.text("REC", x_rec, y, 1)
+
+        self.show()
+
+    def check_button(self):
+        """
+        Debounced button handler.
+        - KEY0: short press -> advance screen by 1
+        - KEY1: short press -> toggle timer start/stop
+        - KEY1: long press (3s) -> reset timer
+        Returns (screen_delta, timer_toggle, timer_reset)
+        """
+        now = time.ticks_ms()
+        k0 = self.key0.value()
+        k1 = self.key1.value()
+
+        screen_delta = 0
+        timer_toggle = False
+        timer_reset = False
+
+        # KEY0 short press: detect falling edge with debounce
+        if self._last_key0 == 1 and k0 == 0:
+            if time.ticks_diff(now, self._last_time_k0) > self._debounce_ms:
+                screen_delta = 1
+                self._last_time_k0 = now
+
+        # KEY1 press start
+        if self._last_key1 == 1 and k1 == 0:
+            if time.ticks_diff(now, self._last_time_k1) > self._debounce_ms:
+                self._k1_press_start = now
+                self._k1_reset_fired = False
+
+        # KEY1 long press detection while held
+        if self._k1_press_start is not None and k1 == 0 and not self._k1_reset_fired:
+            press_ms = time.ticks_diff(now, self._k1_press_start)
+            if press_ms >= self._longpress_ms:
+                timer_reset = True
+                self._k1_reset_fired = True
+
+        # KEY1 release: decide short vs long press
+        if self._last_key1 == 0 and k1 == 1 and self._k1_press_start is not None:
+            press_ms = time.ticks_diff(now, self._k1_press_start)
+            if not self._k1_reset_fired and press_ms < self._longpress_ms:
+                timer_toggle = True
+            if self._k1_reset_fired:
+                self.clear_alert()
+                self._k1_reset_fired = False
+            self._k1_press_start = None
+            self._last_time_k1 = now
+
+        self._last_key0 = k0
+        self._last_key1 = k1
+
+        return screen_delta, timer_toggle, timer_reset
+
     def draw_alert(self, top, bottom):
         """
         Draw two words in the letter font
@@ -367,8 +429,6 @@ class OLED_1inch3(framebuf.FrameBuffer):
         
         self.show()
 
-        h = self.w_letters_big.height
-
     def show_alert(self, top, bottom, seconds):
         """
         Schedule an alert for a certain amount of seconds
@@ -378,8 +438,15 @@ class OLED_1inch3(framebuf.FrameBuffer):
         ms = int(seconds * 1000)
         now = time.ticks_ms()
         self._msg_top = top
-        self.msg_bottom = bottom
+        self._msg_bottom = bottom
         self._msg_until = time.ticks_add(now, ms)
+        print("Alert: {} {}".format(top or "", bottom or ""))
+
+    def clear_alert(self):
+        """Clear any active alert immediately."""
+        self._msg_top = None
+        self._msg_bottom = None
+        self._msg_until = 0
     
     def update_alert(self):
         """

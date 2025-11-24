@@ -2,8 +2,8 @@ import config
 import utime as time
 
 oled = config.OLED_1inch3()
-from machine import Pin, SPI
-from machine import UART, Pin
+from machine import SPI
+from machine import UART
 import math
 
 
@@ -12,19 +12,9 @@ RST = 12
 MOSI = 11
 SCK = 10
 CS = 9
-keyA = Pin(15, Pin.IN, Pin.PULL_UP)
-keyB = Pin(17, Pin.IN, Pin.PULL_UP)
 
-# Button debounce state
-DEBOUNCE_MS = 150      # adjust to taste
-RESET_HOLD_MS = 500    # how long both buttons must be held for reset
-
-last_keyA = 1
-last_keyB = 1
-last_press_time_A = 0
-last_press_time_B = 0
-last_reset_time = 0
-
+# Debug value
+below = True
 
 # ---------------------- Main Program -----------------------
 
@@ -40,8 +30,19 @@ throttle = 0.0
 buffer = ""
 screen = 0
 last_screen = screen
-NUM_SCREENS = 5
+NUM_SCREENS = 6
 distance = 0
+timer_running = False
+timer_elapsed_ms = 0
+timer_start_ms = time.ticks_ms()
+target_mph = 0.0
+uart_blink = False
+
+# Race targets
+RACE_DISTANCE_MI = 1
+RACE_TIME_MIN = 4
+goal_distance_mi = RACE_DISTANCE_MI
+goal_time_sec = RACE_TIME_MIN * 60
 
 # Wheel parameters
 wheel_diameter_in = 16
@@ -50,8 +51,7 @@ wheel_circumference_in = math.pi * wheel_diameter_in  # inches
 print("Waiting for UART data...\n")
 
 # ----------------- TIME VARIABLES -----------------
-start_time = time.ticks_ms()
-last_sample_time = start_time
+last_sample_time = time.ticks_ms()
 elapsed_time = 0.0
 sample_dt = 0.0
 # ---------------------------------------------------
@@ -59,7 +59,6 @@ sample_dt = 0.0
 while True:
     # Time Calculation always runs
     current_time = time.ticks_ms()
-    elapsed_time = time.ticks_diff(current_time, start_time) / 1000
     sample_dt = time.ticks_diff(current_time, last_sample_time) / 1000
     last_sample_time = current_time
 
@@ -87,73 +86,45 @@ while True:
                     if line[0] == "s":
                         # print([line[0]])
                         voltage = float(line[1:4])/10
-                        current = float(line[4:11])/1000
-                        rpm = int(line[11:14])
-                        duty = int(line[14:17])
-                        throttle = int(line[17:20])
-                        print(line[1:4], line[4:10], line[11:14], line[14:17], line[17:20])
+                        current = float(line[4:10])/100
+                        rpm = int(line[11:13])
+                        duty = int(line[13:16])
+                        throttle = int(line[16:])
                         
                 except Exception as e:
                     print("Parse error:", e, "on line:", line)
 
-                # print(
-                #     f"Voltage: {voltage:.2f} V | Current: {current:.2f} A | RPM: {rpm} | Speed: {mph:.2f} Mph |"
-                #     f"Duty: {duty:.0f} | Throttle: {throttle:.1f} %"
-                # )
+                uart_blink = not uart_blink
             
 
     # --------- Derived Values (runs even with stale data)
     power = voltage * current
     mph = rpm * wheel_circumference_in * 60 / 63360.0
-    distance += mph * sample_dt / 3600 * 100  # distance in miles
+    if timer_running:
+        distance += mph * sample_dt / 3600  # distance in miles
 
-    # --------- Button Handling -------------------------
-    t_now = time.ticks_ms()
-    a_now = keyA.value()   # 1 = not pressed, 0 = pressed
-    b_now = keyB.value()
+    # --------- Button Handling via config -------------
+    screen_delta, timer_toggle, timer_reset = oled.check_button()
 
-    pressedA = False
-    pressedB = False
+    if timer_toggle:
+        if timer_running:
+            timer_elapsed_ms += time.ticks_diff(current_time, timer_start_ms)
+            timer_running = False
+            print("Timer stopped")
+        else:
+            timer_start_ms = current_time
+            timer_running = True
+            print("Timer started")
 
-    # Detect NEW press on A (1 -> 0) with debounce
-    if last_keyA == 1 and a_now == 0:
-        if time.ticks_diff(t_now, last_press_time_A) > DEBOUNCE_MS:
-            pressedA = True
-            last_press_time_A = t_now
+    if timer_reset:
+        timer_elapsed_ms = 0
+        distance = 0
+        timer_running = False
+        timer_start_ms = current_time
+        oled.show_alert("TIMER", "RESET", 3)
 
-    # Detect NEW press on B (1 -> 0) with debounce
-    if last_keyB == 1 and b_now == 0:
-        if time.ticks_diff(t_now, last_press_time_B) > DEBOUNCE_MS:
-            pressedB = True
-            last_press_time_B = t_now
-
-    # Update last states
-    last_keyA = a_now
-    last_keyB = b_now
-
-    # ---- Single-button actions (screen change) ----
-    if pressedA and not b_now == 0:   # A pressed, B not currently held
-        screen += 1
-        print("Forward switch")
-
-    if pressedB and not a_now == 0:   # B pressed, A not currently held
-        screen -= 1
-        print("Backward switch")
-
-    # ---- Both buttons: reset time/distance ----
-    if a_now == 0 and b_now == 0:
-        # Only trigger reset if they've been held together long enough
-        if time.ticks_diff(t_now, last_reset_time) > RESET_HOLD_MS:
-            start_time = time.ticks_ms()
-            last_sample_time = start_time
-            elapsed_time = 0
-            distance = 0
-            last_reset_time = t_now
-            print("Reset time & distance")
-
-    else:
-        # If not both held, keep reset timer current
-        last_reset_time = t_now
+    if screen_delta:
+        screen += screen_delta
 
     # Wrap screen
     new_screen = screen % NUM_SCREENS
@@ -162,16 +133,27 @@ while True:
         last_screen = new_screen
     screen = new_screen
 
-    # --------- Time/Distance Reset --------------------
-    if keyA.value() == 0 and keyB.value() == 0:
-        start_time = time.ticks_ms()
-        last_sample_time = start_time
-        elapsed_time = 0
-        distance = 0
+    # --------- Timer Calculation ----------------------
+    if timer_running:
+        elapsed_time = (timer_elapsed_ms + time.ticks_diff(current_time, timer_start_ms)) / 1000
+    else:
+        elapsed_time = timer_elapsed_ms / 1000
+    
+    # --------- Target Speed Calculation ----------------------
+    remaining_distance = max(goal_distance_mi - distance, 0)
+    if timer_running:
+        remaining_time_sec = max(goal_time_sec - elapsed_time, 0.001)
+    else:
+        remaining_time_sec = max(goal_time_sec - elapsed_time, 0.001)
+    target_mph = (remaining_distance / (remaining_time_sec / 3600)) if remaining_time_sec > 0 else 0
 
     # --------- DISPLAY (always runs) ------------------
+    if oled.update_alert():
+        continue
+
     if screen == 0:
-        oled.draw_large_num(mph, "MPH")
+        invert_speed = target_mph > 0 and mph < target_mph
+        oled.draw_large_num(mph, "MPH", invert=invert_speed)
     if screen == 1:
         oled.draw_time(elapsed_time, "ELAPSED")
     if screen == 2:
@@ -179,10 +161,25 @@ while True:
     if screen == 3:
         oled.draw_large_num(voltage, "VOLTS")
     if screen == 4:
-        oled.draw_speed(distance, screen)
-    
-        
-    # Need a screen for target speed
+        oled.draw_demo_distance(distance)
+    if screen == 5:
+        oled.draw_large_num(target_mph, "TARGET MPH")
+
+    # --------- Status Icons --------------------------
+    timer_state = "running" if timer_running else ("paused" if timer_elapsed_ms > 0 else "stopped")
+    oled.draw_status(uart_blink, timer_state)
+
+    # Fluctuations around the target speed for debug purposes
+    if below:
+        if mph < target_mph + 5:
+            rpm += 1
+        else:
+            below = False
+    if not below:
+        if mph > target_mph - 5:
+            rpm -= 1
+        else:
+            below = True
 
 
 
