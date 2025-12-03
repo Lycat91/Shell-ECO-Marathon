@@ -361,7 +361,6 @@ int main() {
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(RX_PIN, GPIO_FUNC_UART);
-    int counter = 0;
     char message[64];
 
     int signal = 's';
@@ -378,7 +377,6 @@ int main() {
         rpm = (motorstate_counter * 4 * 60) / 23 / 6;
         motorstate_counter = 0;
         check_serial_input_for_Phase_Current(); 
-        counter++;
         duty_cycle_norm = duty_cycle*100/DUTY_CYCLE_MAX;
         throttle_norm = throttle*100/255;
         int UARTvoltage_mv=voltage_mv/100;

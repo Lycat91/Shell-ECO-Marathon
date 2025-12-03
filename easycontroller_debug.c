@@ -104,6 +104,8 @@ volatile int throttle = 0;   // 0–255, updated from ADC or serial
 int motorstate_counter = 0;
 int prev_motorstate = 0;
 int rpm = 0;
+float rpm_time_start=0;
+float rpm_time_end = 0;
 
 
 
@@ -139,8 +141,19 @@ void on_adc_fifo() {
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
 
     //RPM counting variable
+
+    if (motorstate_counter == 0){
+        rpm_time_start = get_absolute_time();
+    }
+    
     if (motorState != prev_motorstate){
         motorstate_counter += 1;
+    }
+    
+    if(motorstate_counter == 10){
+        rpm_time_end = get_absolute_time();
+        rpm = motorstate_counter/absolute_time_diff_us(rpm_time_start,rpm_time_end)/138*60000000; //either 132(22 occurences) 138(23 occurences) 144(24 occurences)
+        motorstate_counter = 0; 
     }
     
     throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
@@ -520,7 +533,6 @@ int main() {
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(RX_PIN, GPIO_FUNC_UART);
-    int counter = 0;
     char message[64];
 
 
@@ -573,11 +585,9 @@ int main() {
                 printf("----------------------------ECO MODE ACTIVATED(----------------------------");
             }
             gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
-            rpm = (motorstate_counter * 4 * 60) / 23 / 6; //23 occurences of motorState 1 in 1 revolution 6 motor states
             motorstate_counter = 0;
             check_serial_input_for_Phase_Current(); //Changes Phase current max based on serial inputs
 
-            counter++;
             duty_cycle_norm = duty_cycle*100/DUTY_CYCLE_MAX;
             throttle_norm = throttle*100/255;
             int UARTvoltage_mv=voltage_mv/100;
@@ -588,7 +598,7 @@ int main() {
             { 
                 eco = 0;
             }
-            // Send over UART1 to the other Pico
+
             snprintf(message, sizeof(message), "%c%03d%06d%03d%03d%03d%1d\n", signal, UARTvoltage_mv, current_ma, rpm, duty_cycle_norm, throttle_norm,eco);
             printf("%3d\n",rpm);
             printf("%6d\n",current_ma);
