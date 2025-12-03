@@ -366,7 +366,7 @@ int main() {
     int signal = 's';
     int duty_cycle_norm = 0;
     int throttle_norm = 0;
-    int eco;   
+    int eco;
 
     sleep_ms(1000);
 
