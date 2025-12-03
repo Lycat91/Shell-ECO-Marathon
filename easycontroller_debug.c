@@ -26,6 +26,7 @@ int BATTERY_MAX_CURRENT_MA = 15000;
 const int THROTTLE_LOW = 700;               
 const int THROTTLE_HIGH = 2000;
 int ECO_CURRENT_ma=6000;
+float rpmtomph = 0.04767; //Conversion from rpm to mph (rpm-to-mph)
 
 
 uint8_t hallToMotor[8] = {255, 3, 1, 2, 5, 4, 0, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
@@ -109,6 +110,7 @@ float rpm_time_end = 0;
 int current_smoothing_counter = 0;
 int current_ma_smoothing = 0;
 int current_ma_smoothed = 0;
+float cruise_speed = 0;
 
 
 
@@ -529,7 +531,6 @@ void check_serial_input_for_Phase_Current() {
 }
 
 
-
 int main() {
     printf("Hello from Pico!\n");
     // if (COMPUTER_CONTROL) {
@@ -546,10 +547,6 @@ int main() {
 
 
     printf("Hello from Pico!\n");
-
-    
-
-
 
                         //MODE SELECT//
     //wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
@@ -586,9 +583,6 @@ int main() {
 
     if (mode == '0'){
         while (true) {
-            //float current_A = (float)current_ma/1000;
-            //float current_TargetA = (float)current_target_ma / 1000.0;
-            //float voltage_V = (float)voltage_mv / 1000.0;
             //printf("%6.2d, %6.2f, %6d, %6.2d, %6d, %3d, %2d\n", current_ma_smoothed, current_TargetA, duty_cycle, voltage_mv, duty_cycle, throttle, rpm);
             if(current_target_ma == ECO_CURRENT_ma){
                 printf("----------------------------ECO MODE ACTIVATED(----------------------------");
@@ -610,7 +604,7 @@ int main() {
 
             snprintf(message, sizeof(message), "%c%03d%06d%03d%03d%03d%1d\n", signal, UARTvoltage_mv, current_ma_smoothed, rpm, duty_cycle_norm, throttle_norm,eco);
             printf("%3d\n",rpm);
-            printf("%6d\n",current_ma);
+            printf("%6d\n",current_ma_smoothed);
             printf(message);
             uart_puts(UART_ID, message);
             sleep_ms(250);
@@ -627,5 +621,5 @@ Notes for next testing session
 
 Test rpm with new time sampling function adjust occurences if needed
 
-Test smoothed current reading and implement into target current if data is improved,/
+Test smoothed current reading and implement into target current if data is improved
 */
