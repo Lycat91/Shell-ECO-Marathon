@@ -26,6 +26,7 @@ int BATTERY_MAX_CURRENT_MA = 15000;
 const int THROTTLE_LOW = 700;               
 const int THROTTLE_HIGH = 2000;
 int ECO_CURRENT_ma=6000;
+float rpmtomph = 0.04767; //Conversion from rpm to mph (rpm-to-mph)
 
 
 uint8_t hallToMotor[8] = {255, 3, 1, 2, 5, 4, 0, 255};  //Correct Hall Table !!!DO NOT CHANGE!!!
@@ -76,7 +77,7 @@ const uint A_PWM_SLICE = 0;
 const uint B_PWM_SLICE = 1;
 const uint C_PWM_SLICE = 2;
  
-const uint F_PWM = 16000;   // Desired PWM frequency                                                !!!!!!!!!!!!change back to const int!!!!!!!!!!!!!!!!!
+const uint F_PWM = 16000;   // Desired PWM frequency                                              
 const uint FLAG_PIN = 2;
 const uint HALL_OVERSAMPLE = 8;
 
@@ -104,6 +105,12 @@ volatile int throttle = 0;   // 0–255, updated from ADC or serial
 int motorstate_counter = 0;
 int prev_motorstate = 0;
 int rpm = 0;
+float rpm_time_start=0;
+float rpm_time_end = 0;
+int current_smoothing_counter = 0;
+int current_ma_smoothing = 0;
+int current_ma_smoothed = 0;
+float cruise_speed = 0;
 
 
 
@@ -139,8 +146,19 @@ void on_adc_fifo() {
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
 
     //RPM counting variable
+
+    if (motorstate_counter == 0){
+        rpm_time_start = get_absolute_time();
+    }
+    
     if (motorState != prev_motorstate){
         motorstate_counter += 1;
+    }
+    
+    if(motorstate_counter == 10){
+        rpm_time_end = get_absolute_time();
+        rpm = motorstate_counter/absolute_time_diff_us(rpm_time_start,rpm_time_end)/138*60000000; //either 132(22 occurences) 138(23 occurences) 144(24 occurences)
+        motorstate_counter = 0; 
     }
     
     throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
@@ -150,6 +168,12 @@ void on_adc_fifo() {
 
 
     current_ma = (adc_isense - adc_bias) * CURRENT_SCALING;     // Since the current sensor is bidirectional, subtract the zero-current value and scale
+    current_smoothing_counter+=1;
+    current_ma_smoothing += current_ma;
+    if (current_smoothing_counter = 10){
+        current_ma_smoothed=current_ma_smoothing/10; //adjust sample size for more drastic smoothing
+    }
+
     voltage_mv = adc_vsense * VOLTAGE_SCALING;  // Calculate the bus voltage
 
     if(CURRENT_CONTROL) {
@@ -179,7 +203,7 @@ void on_adc_fifo() {
         if(rpm < 30 && throttle != 0){
             duty_cycle = LAUNCH_DUTY_CYCLE; 
         }
-        /////////////////////////////////////////////////////////////////////
+     
 
         bool do_synchronous = ticks_since_init > 16000;    // Only enable synchronous switching some time after beginning control loop. This allows control loop to stabilize
         writePWM(motorState, (uint)(duty_cycle / 256), do_synchronous);
@@ -507,7 +531,6 @@ void check_serial_input_for_Phase_Current() {
 }
 
 
-
 int main() {
     printf("Hello from Pico!\n");
     // if (COMPUTER_CONTROL) {
@@ -520,23 +543,32 @@ int main() {
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(RX_PIN, GPIO_FUNC_UART);
-    int counter = 0;
     char message[64];
 
 
     printf("Hello from Pico!\n");
 
-    
-
-
-
                         //MODE SELECT//
     //wait_for_serial_command("System initialized. Waiting to start..."); //***Wait function press any key to pass
     int mode;
+    int signal = 's';
+    int duty_cycle_norm = 0;
+    int throttle_norm = 0;
+    int eco;
+    int speed;
+
+    //Smart cruise
+    bool condition = false; // Idk what the start condition is yet
+    int target_speed; //target cruise speed
+    int cruise_counter = 0; //cruise condition delay
+    int cruise_error = 1; //looking for target speed += 1 mph
+    float cruise_increment = .25; //will increase or decrease target current by 250mA if off target 
+    //Smart cruise
+
     printf("Select mode of operation");
     printf("Current control: 0     Open loop commutate: 1     Open loop comutate serial command pwm: 2");
-    mode=getchar();
-
+    //mode=getchar();
+    mode = '0';
     if (mode == '1'){
         commutate_open_loop();   // May be helpful for debugging electrical problems
     }
@@ -561,28 +593,64 @@ int main() {
 
     if (mode == '0'){
         while (true) {
-            float current_A = (float)current_ma/1000;
-            float current_TargetA = (float)current_target_ma / 1000.0;
-            float voltage_V = (float)voltage_mv / 1000.0;
-            printf("%6.2f, %6.2f, %6d, %6.2f, %2d, %2d, %2d\n", current_A, current_TargetA, duty_cycle, voltage_V, hall, motorState, rpm);
-            //printf("ADC_THROTTLE=%4d\n", adc_throttle);
+            //printf("%6.2d, %6.2f, %6d, %6.2d, %6d, %3d, %2d\n", current_ma_smoothed, current_TargetA, duty_cycle, voltage_mv, duty_cycle, throttle, rpm);
             if(current_target_ma == ECO_CURRENT_ma){
                 printf("----------------------------ECO MODE ACTIVATED(----------------------------");
             }
             gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
-            rpm = (motorstate_counter * 10 * 60) / 23 / 6; //23 occurences of motorState 1 in 1 revolution 6 motor states
             motorstate_counter = 0;
             check_serial_input_for_Phase_Current(); //Changes Phase current max based on serial inputs
 
-            counter++;
+            duty_cycle_norm = duty_cycle*100/DUTY_CYCLE_MAX;
+            throttle_norm = throttle*100/255;
+            speed = rpmtomph;
+            int UARTvoltage_mv=voltage_mv/100;
+            if (throttle_norm >= 90){
+                eco = 1;
+            }
+            else
+            { 
+                eco = 0;
+            }
 
-            // Send over UART1 to the other Pico
-            snprintf(message, sizeof(message), "V=%3.2f, I=%3.2f, RPM=%4d, DUTY=%6d, THROTTLE=%3d\n", voltage_V, current_A, rpm, duty_cycle, throttle);
-            //printf(message);
+            snprintf(message, sizeof(message), "%c%03d%06d%03d%03d%03d%1d\n", signal, UARTvoltage_mv, current_ma_smoothed, rpm, duty_cycle_norm, throttle_norm,eco);
+            printf("%3d\n",rpm);
+            printf("%6d\n",current_ma_smoothed);
+            printf(message);
             uart_puts(UART_ID, message);
-            sleep_ms(100);
+            sleep_ms(250);
+
+
+            //Smart cruise
+            cruise_counter+=1; //delay increment
+            if (condition && cruise_counter = 4){ //checking if current speed within error of target and if weve waited long enough to detect a change
+                if (rpm*rpmtomph > (target_speed - cruise_error) && speed < (target_speed + cruise_error)){
+                    continue;
+                }
+                else if (speed < (target_speed - cruise_error)){ // checking if speed below target
+                    current_target_ma +=cruise_increment;//increase target current (aka increase speed)
+                }
+                else if (speed > (target_speed+cruise_error)){ // checking if speed above target 
+                    current_target_ma -=cruise_increment;//decrease target current (aka decrease speed)
+                }
+                cruise_counter=0;
+            }
+            //Smart cruise
+
         }
-    }
 
     return 0;
+    }
 }
+
+
+
+/*
+Notes for next testing session
+
+Test rpm with new time sampling function adjust occurences if needed
+
+Test smoothed current reading and implement into target current if data is improved
+
+Tune smart cruise see if it works 
+*/
