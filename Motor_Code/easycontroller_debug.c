@@ -102,17 +102,19 @@ uint motorState = 0;
 int fifo_level = 0;
 uint64_t ticks_since_init = 0;
 volatile int throttle = 0;   // 0–255, updated from ADC or serial
-int motorstate_counter = 0;
+int motorstate_counter = 0.0;
 int prev_motorstate = 0;
-int rpm = 0;
-float rpm_time_start=0;
-float rpm_time_end = 0;
+volatile float rpm = 0.0f;
+absolute_time_t rpm_time_start=0;
+absolute_time_t rpm_time_end = 0;
 int current_smoothing_counter = 0;
 int current_ma_smoothing = 0;
 int current_ma_smoothed = 0;
 float cruise_speed = 0;
 bool smart_cruise = false;
 int battery_current_ma;
+int prev_current_target_ma=0;
+absolute_time_t time_since_last_movement;
 
 
 
@@ -148,19 +150,24 @@ void on_adc_fifo() {
     motorState = hallToMotor[hall];     // Convert the current hall reading to the desired motor state
 
     //RPM counting variable
-
     if (motorstate_counter == 0){
         rpm_time_start = get_absolute_time();
     }
     
     if (motorState != prev_motorstate){
+        time_since_last_movement = get_absolute_time();
         motorstate_counter += 1;
     }
     
-    if(motorstate_counter == 10){
+    if (motorstate_counter >= 10) {
         rpm_time_end = get_absolute_time();
-        rpm = motorstate_counter/absolute_time_diff_us(rpm_time_start,rpm_time_end)/138*60000000; //either 132(22 occurences) 138(23 occurences) 144(24 occurences)
-        motorstate_counter = 0; 
+        float dt_us = (float)absolute_time_diff_us(rpm_time_start, rpm_time_end);
+        rpm = (motorstate_counter * 60.0f * 1e6f) / (dt_us * 144.0f); // adjust 144 if needed
+        motorstate_counter = 0;
+}
+    if(absolute_time_diff_us(time_since_last_movement, get_absolute_time()) > 500000){ //resets rpm counter if no motor movement for .5 seconds
+        rpm = 0;
+        motorstate_counter = 0;
     }
     
     throttle = ((adc_throttle - THROTTLE_LOW) * 256) / (THROTTLE_HIGH - THROTTLE_LOW);  // Scale the throttle value read from the ADC
@@ -175,7 +182,7 @@ void on_adc_fifo() {
     voltage_mv = adc_vsense * VOLTAGE_SCALING;  // Calculate the bus voltage
 
     if(CURRENT_CONTROL) {
-        int prev_current_target_ma = current_target_ma;
+        prev_current_target_ma = current_target_ma;
         int user_current_target_ma = throttle * PHASE_MAX_CURRENT_MA / 256;  // Calculate the user-demanded phase current
 
         int battery_current_limit_ma;
@@ -193,20 +200,22 @@ void on_adc_fifo() {
             duty_cycle = 0;     // If zero throttle, ignore the current control loop and turn all transistors off
             ticks_since_init = 0;   // Reset the timer since the transistors were turned on
         }
-        else
+        else{
             ticks_since_init++;
-        
+        }
 
         ////////////////////////////ECO MODE/////////////////////////////
         
         if (adc_throttle > 2000){
             current_target_ma=ECO_CURRENT_ma;
         }
+
         //////////////////////////Smart Cruise//////////////////////////
-        if (smart_cruise && (current_target_ma)){
+        if (adc_throttle > 2000){
             current_target_ma = prev_current_target_ma;
         }
-        current_target_ma = MAX(0, MIN(current_target_ma, MIN(PHASE_MAX_CURRENT_MA, battery_current_limit_ma)));
+
+        current_target_ma = MIN(current_target_ma, battery_current_limit_ma);
         
         duty_cycle += (current_target_ma - current_ma) / CURRENT_CONTROL_LOOP_GAIN;  // Perform a simple integral controller to adjust the duty cycle
         duty_cycle = MAX(0, MIN(DUTY_CYCLE_MAX, duty_cycle));   // Clamp the duty cycle
@@ -572,9 +581,8 @@ int main() {
     int speed;
 
     //Smart cruise
-    int target_speed = 16; //target cruise speed
-    int cruise_counter = 0; //cruise condition delay
-    int cruise_error = 1; //looking for target speed += 1 mph
+    float target_speed = 16.0; //target cruise speed
+    float cruise_error = 1.0; //looking for target speed += 1 mph
     float cruise_increment = 250; //will increase or decrease target current by 250mA if off target 
 
     //Smart cruise
@@ -608,11 +616,10 @@ int main() {
     if (mode == '0'){
         while (true) {
             //printf("%6.2d, %6.2f, %6d, %6.2d, %6d, %3d, %2d\n", current_ma_smoothed, current_TargetA, duty_cycle, voltage_mv, duty_cycle, throttle, rpm);
-            if(current_target_ma == ECO_CURRENT_ma){
-                printf("----------------------------ECO MODE ACTIVATED(----------------------------");
-            }
+            // if(current_target_ma == ECO_CURRENT_ma){
+            //     printf("----------------------------ECO MODE ACTIVATED(----------------------------");
+            // }
             gpio_put(LED_PIN, !gpio_get(LED_PIN));  // Toggle the LED
-            motorstate_counter = 0;
             check_serial_input_for_Phase_Current(); //Changes Phase current max based on serial inputs
 
             duty_cycle_norm = duty_cycle*100/DUTY_CYCLE_MAX;
@@ -631,14 +638,12 @@ int main() {
             snprintf(message, sizeof(message), "%c%03d%06d%03d%03d%03d%1d\n", 
                 signal, 
                 UARTvoltage_mv, 
-                battery_current_ma, // <--- Send the calculated battery current here (make sure to declare this variable in main or make the volatile one global)
+                battery_current_ma, 
                 rpm, 
                 duty_cycle_norm, 
                 throttle_norm,
                 eco);
-            printf("%3d\n",rpm);
-            printf("%6d\n",current_ma_smoothed);
-            printf(message);
+            //printf(message);
             uart_puts(UART_ID, message);
             sleep_ms(250);
 
@@ -651,22 +656,28 @@ int main() {
                 smart_cruise = false;
             }
 
-            cruise_counter+=1; //delay increment
-            if (smart_cruise == true && cruise_counter == 3){ //checking if current speed within error of target and if weve waited long enough to detect a change
+            if (smart_cruise == true){ //checking if current speed within error of target and if weve waited long enough to detect a change
                 if (rpm*rpmtomph > (target_speed - cruise_error) && speed < (target_speed + cruise_error)){
                     continue; // Speed is within target range - no adjustment needed
                 }
                 else if (speed < (target_speed - cruise_error) && current_target_ma < PHASE_MAX_CURRENT_MA){ // checking if speed below target and that we arent above max current
                     current_target_ma +=cruise_increment;//increase target current (aka increase speed)
                 }
-                else if (speed > (target_speed+cruise_error)){ // checking if speed above target 
+                else if (speed > (target_speed+cruise_error) && current_target_ma > 200){ // checking if speed above target 
                     current_target_ma -=cruise_increment;//decrease target current (aka decrease speed)
                 }
-                cruise_counter=0;
-                printf("Smart_cruise activated");
-                printf("Current Target mA: %6d\n", current_target_ma);
             }
             //Smart cruise
+        printf("rpm:%6f | mph:%6.2f | smoothed_ma:%6d | current_ma:%6d | target_ma:%6d | throttle_norm:%3d%% | throttle_raw:%3d | duty_norm:%3d%% | motor_state:%d\n",
+       rpm,
+       rpm * rpmtomph,
+       current_ma_smoothed,
+       current_ma,
+       current_target_ma,
+       throttle_norm,
+       throttle,
+       duty_cycle_norm,
+       motorState);
         }
     }
 
@@ -679,8 +690,11 @@ int main() {
 Notes for next testing session
 
 Test rpm with new time sampling function adjust occurences if needed
+RPM gets stuck when motor state = 0
 
 Test smoothed current reading and implement into target current if data is improved
+set up scaling factor 
 
 Tune smart cruise see if it works 
+integrate time and and in the interrupt
 */
