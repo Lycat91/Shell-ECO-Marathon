@@ -1,33 +1,48 @@
 import config
 import utime as time
-
-oled = config.OLED_1inch3()
-from machine import SPI
-from machine import UART
+from display import DisplayManager
+from performance import PerformanceMonitor
+from uart_manager import UartManager
 import math
 
+# --- Hardware Setup ---
+oled_driver = config.OLED_1inch3()
+display = DisplayManager(oled_driver)
 
-DC = 8
-RST = 12
-MOSI = 11
-SCK = 10
-CS = 9
+# --- Debug Flags ---
+DEBUG_PERFORMANCE = True
+DEBUG_VERBOSE = True
+DEBUG_SIMULATE_SPEED = True
+perf_monitor = (
+    PerformanceMonitor(verbose=DEBUG_VERBOSE) if DEBUG_PERFORMANCE else None
+)
 
 # Debug value
 below = True
 
 # ---------------------- Main Program -----------------------
 
-# UART Setup
-uart = config.uart
+def simulate_speed_data(uart_manager, current_mph, target_mph, below_state):
+    """
+    Simulates RPM fluctuations around a target speed for testing without UART.
+    Returns the new 'below' state.
+    """
+    if below_state:
+        if current_mph < target_mph + 2:
+            uart_manager.rpm += 1
+        else:
+            below_state = False
+    else:  # not below
+        if current_mph > target_mph - 2:
+            uart_manager.rpm -= 1
+        else:
+            below_state = True
+    return below_state
+
+# --- Managers ---
+uart_manager = UartManager(config.uart)
 
 # Live values
-voltage = 0.0
-current = 0.0
-rpm = 0
-duty = 0
-throttle = 0.0
-buffer = ""
 screen = 0
 last_screen = screen
 NUM_SCREENS = 6
@@ -37,12 +52,9 @@ timer_state = 'reset'
 timer_elapsed_ms = 0
 timer_start_ms = time.ticks_ms()
 target_mph = 0.0
-uart_blink = False
-eco = False
+mph = 0.0
 last_print_ticks = time.ticks_ms() #Demo for time and distance reamining 
 timer_start_ticks = 0
-
-
 
 
 # Race targets
@@ -69,51 +81,24 @@ while True:
     sample_dt = time.ticks_diff(current_time, last_sample_time) / 1000
     last_sample_time = current_time
 
-    # -------- UART Parsing ---------------
-    if uart.any():
-        data = uart.read()
-        if data:
-            # Convert bytes to printable characters
-            for b in data:
-                if 32 <= b <= 126 or b == 10:
-                    buffer += chr(b)
-
-            # Process complete lines
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                line = line.strip()
-                # print(line)       #DEBUG
-                if not line:
-                    continue
-
-                try:
-                    # Determine type of message based on identifying char
-
-                    # If Status message, parse the message
-                    if line[0] == "s":
-                        # print([line[0]])
-                        voltage = float(line[1:4])/10
-                        current = float(line[4:10])/1000
-                        rpm = int(line[10:13])
-                        duty = int(line[13:16])
-                        throttle = int(line[16:19])
-                        eco = bool(int(line[19:]))
-    
-                        
-                except Exception as e:
-                    print("Parse error:", e, "on line:", line)
-
-                uart_blink = not uart_blink
-            
+    # -------- Input Handling ---------------
+    uart_manager.update()
 
     # --------- Derived Values (runs even with stale data)
-    power = voltage * current
-    mph = rpm * wheel_circumference_in * 60 / 63360.0
+    power = uart_manager.voltage * uart_manager.current
+    mph = uart_manager.rpm * wheel_circumference_in * 60 / 63360.0
     if timer_running:
         distance += mph * sample_dt / 3600  # distance in miles
 
+    # -------- Simulate Speed if no UART data ---------------
+    if DEBUG_SIMULATE_SPEED and not uart_manager.new_data:
+        below = simulate_speed_data(uart_manager, mph, target_mph, below)
+
     # --------- Button Handling via config -------------
-    screen_delta, timer_toggle, timer_reset = oled.check_button()
+    screen_delta, timer_toggle, timer_reset, clear_alert_signal = oled_driver.check_button()
+
+    if clear_alert_signal:
+        display.clear_alert()
 
     if timer_toggle:
         if timer_running:
@@ -133,7 +118,7 @@ while True:
         timer_running = False
         timer_state = 'reset'
         timer_start_ms = current_time
-        oled.show_alert("TIMER", "RESET", 3)
+        display.show_alert("TIMER", "RESET", 3)
 
     if screen_delta:
         screen += screen_delta
@@ -143,6 +128,7 @@ while True:
     if new_screen != last_screen:
         print("screen: ", new_screen)
         last_screen = new_screen
+        display.screen_changed()
     screen = new_screen
 
     # --------- Timer Calculation ----------------------
@@ -160,47 +146,34 @@ while True:
     target_mph = (remaining_distance / (remaining_time_sec / 3600)) if remaining_time_sec > 0 else 0
 
     # --------- DISPLAY (always runs) ------------------
-    if oled.update_alert():
+    if display.update_alert():
         continue
+
+    if perf_monitor: perf_monitor.start()
 
     if screen == 0:
         invert_speed = target_mph > 0 and mph < target_mph
-        oled.draw_large_num(mph, "MPH", uart_blink, timer_state, invert=invert_speed, eco=eco)
-    if screen == 1:
-        oled.draw_time(elapsed_time, "ELAPSED", uart_blink, timer_state)
-    if screen == 2:
-        oled.draw_large_num(current, "AMPS", uart_blink, timer_state)
-    if screen == 3:
-        oled.draw_large_num(voltage, "VOLTS", uart_blink, timer_state)
-    if screen == 4:
-        oled.draw_demo_distance(distance)
-    if screen == 5:
-        oled.draw_large_num(target_mph, "TARGET MPH", uart_blink, timer_state)
-    # Demo for time and distance remaining
-    if timer_running:
-        now = time.ticks_ms()
-        elapsed_time = time.ticks_diff(now, timer_start_ticks) / 1000  # seconds
-        
-        if elapsed_time > 0:   # timer actually running
-            if time.ticks_diff(now, last_print_ticks) >= 1000:
-                last_print_ticks = now
-                print(f"Time remaining: {remaining_time_sec:.0f}  Distance remaining: {remaining_distance:.3f}")
+        display.draw_large_num(mph, "MPH", uart_manager.uart_blink, timer_state, invert=invert_speed, eco=uart_manager.eco)
+    elif screen == 1:
+        display.draw_time(elapsed_time, "ELAPSED", uart_manager.uart_blink, timer_state)
+    elif screen == 2:
+        display.draw_large_num(uart_manager.current, "AMPS", uart_manager.uart_blink, timer_state)
+    elif screen == 3:
+        display.draw_large_num(uart_manager.voltage, "VOLTS", uart_manager.uart_blink, timer_state)
+    elif screen == 4:
+        display.draw_demo_distance(distance)
+    elif screen == 5:
+        display.draw_large_num(target_mph, "TARGET MPH", uart_manager.uart_blink, timer_state)
 
+    if perf_monitor: perf_monitor.stop()
 
-
-
-    # # Fluctuations around the target speed for debug purposes
-    # if below:
-    #     if mph < target_mph + 5:
-    #         rpm += 1
-    #     else:
-    #         below = False
-    # if not below:
-    #     if mph > target_mph - 5:
-    #         rpm -= 1
-    #     else:
-    #         below = True
-
-
-
-
+    # --------- DEBUG LOGGING ----------------------
+    if perf_monitor:
+        if timer_running:
+            # Pass race data when the timer is active
+            perf_monitor.update(
+                remaining_time=remaining_time_sec, remaining_dist=remaining_distance
+            )
+        else:
+            # Otherwise, just update for performance stats
+            perf_monitor.update()
